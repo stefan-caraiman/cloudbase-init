@@ -20,11 +20,14 @@ CONF = cloudbaseinit_conf.CONF
 
 
 class ExtendVolumesPlugin(base.BasePlugin):
+
+    optional_capabilities = required_capabilities = ()
+
     def _get_volumes_to_extend(self):
         if CONF.volumes_to_extend is not None:
             return list(map(int, CONF.volumes_to_extend))
 
-    def execute(self, service, shared_data):
+    def execute(self, service_group, shared_data):
         volumes_indexes = self._get_volumes_to_extend()
         storage_manager = storage_factory.get_storage_manager()
         storage_manager.extend_volumes(volumes_indexes)

@@ -22,6 +22,7 @@ except ImportError:
     import mock
 
 from cloudbaseinit import exception
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.metadata.services import base as service_base
 from cloudbaseinit.plugins.common import base as plugin_base
 from cloudbaseinit.plugins.common import networkconfig
@@ -41,7 +42,8 @@ class TestNetworkConfigPlugin(unittest.TestCase):
                       missed_adapters=[],
                       extra_network_details=[]):
         # Prepare mock environment.
-        mock_service = mock.MagicMock()
+        mock_service_group = mock.MagicMock()
+        mock_service = mock_service_group.get_by_capabilities.return_value
         mock_shared_data = mock.Mock()
         mock_osutils = mock.MagicMock()
         mock_service.get_network_details.return_value = network_details
@@ -50,7 +52,7 @@ class TestNetworkConfigPlugin(unittest.TestCase):
         mock_osutils.set_static_network_config.return_value = True
         network_execute = functools.partial(
             self._network_plugin.execute,
-            mock_service, mock_shared_data
+            mock_service_group, mock_shared_data
         )
         # Actual tests.
         if not network_details:
@@ -102,6 +104,8 @@ class TestNetworkConfigPlugin(unittest.TestCase):
             calls6, any_order=True)
         reboot = len(missed_adapters) != self._count
         self.assertEqual((plugin_base.PLUGIN_EXECUTION_DONE, reboot), ret)
+        mock_service_group.get_by_capabilities.return_value(
+            capabilities.NETWORK_DETAILS)
 
     def _setUp(self, same_names=True, wrong_names=False, no_macs=False):
         # Generate fake pairs of NetworkDetails objects and

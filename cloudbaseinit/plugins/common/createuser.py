@@ -53,7 +53,7 @@ class BaseCreateUserPlugin(base.BasePlugin):
         maximum_length = osutils.get_maximum_password_length()
         return osutils.generate_random_password(maximum_length)
 
-    def execute(self, service, shared_data):
+    def execute(self, service_group, shared_data):
         user_name = CONF.username
         shared_data[constants.SHARED_DATA_USERNAME] = user_name
 

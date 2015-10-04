@@ -19,6 +19,7 @@ try:
 except ImportError:
     import mock
 
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.plugins.common import base
 from cloudbaseinit.plugins.common import sethostname
 from cloudbaseinit.tests import testutils
@@ -37,15 +38,19 @@ class SetHostNamePluginPluginTests(unittest.TestCase):
         new_hostname = 'hostname'
         shared_data = 'fake_shared_data'
         mock_get_os_utils.return_value = None
-        mock_service = mock.MagicMock()
+        mock_service_group = mock.MagicMock()
+        mock_service = mock_service_group.get_by_capabilities.return_value
         if hostname_exists:
             mock_service.get_host_name.return_value = new_hostname
         else:
             mock_service.get_host_name.return_value = None
         mock_set_hostname.return_value = (new_hostname, True)
 
-        response = self._sethostname_plugin.execute(mock_service, shared_data)
+        response = self._sethostname_plugin.execute(
+            mock_service_group, shared_data)
 
+        mock_service_group.get_by_capabilities.assert_called_once_with(
+            capabilities.HOSTNAME)
         mock_service.get_host_name.assert_called_once_with()
 
         if hostname_exists:

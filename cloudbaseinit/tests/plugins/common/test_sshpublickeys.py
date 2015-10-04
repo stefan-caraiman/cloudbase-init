@@ -21,6 +21,7 @@ except ImportError:
     import mock
 
 from cloudbaseinit import exception
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.plugins.common import base
 from cloudbaseinit.plugins.common import sshpublickeys
 from cloudbaseinit.tests.metadata import fake_json_response
@@ -40,8 +41,9 @@ class SetUserSSHPublicKeysPluginTests(unittest.TestCase):
     @mock.patch('os.makedirs')
     def _test_execute(self, mock_os_makedirs, mock_os_path,
                       mock_get_os_utils, user_home):
-        mock_service = mock.MagicMock()
+        mock_service_group = mock.MagicMock()
         mock_osutils = mock.MagicMock()
+        mock_service = mock_service_group.get_by_capabilities.return_value
         fake_shared_data = 'fake data'
         mock_service.get_public_keys.return_value = self.fake_data
         mock_get_os_utils.return_value = mock_osutils
@@ -51,13 +53,14 @@ class SetUserSSHPublicKeysPluginTests(unittest.TestCase):
         if user_home is None:
             self.assertRaises(exception.CloudbaseInitException,
                               self._set_ssh_keys_plugin.execute,
-                              mock_service, fake_shared_data)
+                              mock_service_group, fake_shared_data)
         else:
             with mock.patch('cloudbaseinit.plugins.common.sshpublickeys'
                             '.open',
                             mock.mock_open(), create=True):
-                response = self._set_ssh_keys_plugin.execute(mock_service,
-                                                             fake_shared_data)
+                response = self._set_ssh_keys_plugin.execute(
+                    mock_service_group,
+                    fake_shared_data)
                 mock_service.get_public_keys.assert_called_with()
                 mock_osutils.get_user_home.assert_called_with(
                     mock.sentinel.username)
@@ -65,6 +68,8 @@ class SetUserSSHPublicKeysPluginTests(unittest.TestCase):
                 mock_os_makedirs.assert_called_once_with(mock_os_path.join())
 
                 self.assertEqual((base.PLUGIN_EXECUTION_DONE, False), response)
+        mock_service_group.get_by_capabilities.assert_called_once_with(
+            capabilities.PUBLIC_KEYS)
 
     def test_execute_with_user_home(self):
         fake_user_home = os.path.join('fake', 'home')
@@ -74,12 +79,13 @@ class SetUserSSHPublicKeysPluginTests(unittest.TestCase):
         self._test_execute(user_home=None)
 
     def test_no_public_keys(self):
-        mock_service = mock.Mock()
+        mock_service_group = mock.Mock()
+        mock_service = mock_service_group.get_by_capabilities.return_value
         mock_service.get_public_keys.return_value = None
 
         with testutils.LogSnatcher('cloudbaseinit.plugins.common.'
                                    'sshpublickeys') as snatcher:
-            self._set_ssh_keys_plugin.execute(mock_service, {})
+            self._set_ssh_keys_plugin.execute(mock_service_group, {})
 
         expected_logging = ['Public keys not found in metadata']
         self.assertEqual(expected_logging, snatcher.output)

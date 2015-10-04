@@ -20,6 +20,7 @@ from oslo_log import log as oslo_logging
 from cloudbaseinit import conf as cloudbaseinit_conf
 from cloudbaseinit import constant
 from cloudbaseinit import exception
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.metadata.services import baseopenstackservice
 from cloudbaseinit.metadata.services.osconfigdrive import factory
@@ -33,9 +34,20 @@ CD_LOCATIONS = constant.CD_LOCATIONS
 
 class ConfigDriveService(baseopenstackservice.BaseOpenStackService):
 
+    supported_capabilities = (capabilities.USER_DATA,
+                              capabilities.INSTANCE_ID,
+                              capabilities.HOSTNAME,
+                              capabilities.PUBLIC_KEYS,
+                              capabilities.NETWORK_DETAILS,
+                              capabilities.AUTH_CERTS,
+                              capabilities.ADMIN_PASSWORD)
+
     def __init__(self):
         super(ConfigDriveService, self).__init__()
         self._metadata_path = None
+
+    def aggregated_group(self):
+        return base.OpenstackAggregateService
 
     def _preprocess_options(self):
         self._searched_types = set(CONF.config_drive.types)

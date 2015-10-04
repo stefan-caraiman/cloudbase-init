@@ -53,19 +53,72 @@ class NotExistingMetadataException(Exception):
     pass
 
 
+class AggregateService(object):
+    """Encapsulate one or more services into a single entity."""
+
+    def __init__(self, *services):
+        self._services = services
+
+    def get_instance_id(self):
+        """Get the instance id of the underlying services."""
+        return self._services[0].get_instance_id()
+
+    def get_by_capabilities(self, *capabilities):
+        """Pick the first service which has all the given capabilities."""
+
+        capabilities = set(capabilities)
+        for service in self._services:
+            service_capabilities = set(service.supported_capabilities)
+            if service_capabilities == capabilities:
+                return service
+        raise exception.MissingCapabilityException(
+            "No service found with all the required capabilities.")
+
+
+class OpenstackAggregateService(AggregateService):
+
+    def get_instance_id(self):
+        """Get the underlying instance id
+
+        This will try to pick the instance id that doesn't belong to the
+        EC2 metadata service, since it's different than the one exposed
+        by OpenStack HTTP and ConfigDrive metadata.
+        """
+
+        for service in self._services:
+            if service.get_name() != 'EC2Service':
+                return service.get_instance_id()
+
+
 @six.add_metaclass(abc.ABCMeta)
 class BaseMetadataService(object):
+
     _GZIP_MAGIC_NUMBER = b'\x1f\x8b'
 
     def __init__(self):
         self._cache = {}
         self._enable_retry = False
 
+    def aggregated_group(self):
+        """Get the metadata services which forms a metadata group
+
+        A metadata group represents metadata services which have in
+        common their metadata provenience, such as the case for HTTP
+        metadata and ConfigDrive for OpenStack. An aggregated group
+        is loaded together in parallel.
+        """
+
     def get_name(self):
         return self.__class__.__name__
 
     def load(self):
         self._cache = {}
+
+    def supported_capabilities(self):
+        """Specify which capabilities this metadata exports
+
+        It must be a sequence of capabilities.
+        """
 
     @abc.abstractmethod
     def _get_data(self, path):

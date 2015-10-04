@@ -23,6 +23,8 @@ _W32TIME_SERVICE = "w32time"
 
 class NTPClientPlugin(ntpclient.NTPClientPlugin):
 
+    optional_capabilities = required_capabilities = ()
+
     @staticmethod
     def _set_ntp_trigger_mode(osutils):
         """Set the trigger mode for w32time service to network availability.

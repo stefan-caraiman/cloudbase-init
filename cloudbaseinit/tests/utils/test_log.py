@@ -13,6 +13,8 @@
 #    under the License.
 
 import importlib
+import sys
+import traceback
 import unittest
 
 try:
@@ -30,16 +32,19 @@ class SerialPortHandlerTests(unittest.TestCase):
 
     def setUp(self):
         self._serial = mock.MagicMock()
+        self._threading = mock.Mock()
         self._stream = mock.MagicMock()
         self._module_patcher = mock.patch.dict(
             'sys.modules',
-            {'serial': self._serial})
+            {'serial': self._serial,
+             'threading': self._threading})
 
         self._module_patcher.start()
 
         self.log = importlib.import_module("cloudbaseinit.utils.log")
 
         self.log.serial = self._serial
+        self.log.threading = self._threading
         self._old_value = CONF.get('logging_serial_port_settings')
         CONF.set_override('logging_serial_port_settings', "COM1,115200,N,8")
         self._serial_port_handler = self.log.SerialPortHandler()
@@ -114,3 +119,75 @@ class SerialPortHandlerTests(unittest.TestCase):
 
     def test_unicode_write_with_encode(self):
         self._test_unicode_write(is_six_instance=True)
+
+    def test_log_consumer_init(self):
+        self.log.LogConsumer(mock.sentinel.log_queue)
+
+        self._threading.Event.assert_called_once_with()
+        self._threading.Thread.assert_called_once_with(
+            target=self.log._consume_log_queue,
+            args=(mock.sentinel.log_queue,
+                  self._threading.Event.return_value))
+
+    def test_log_consumer_start_consume(self):
+        consumer = self.log.LogConsumer(mock.sentinel.log_queue)
+        consumer.start_consume()
+
+        consumer._thread.start.assert_called_once_with()
+
+    def test_log_consumer_finish_consume(self):
+        consumer = self.log.LogConsumer(mock.sentinel.log_queue)
+        consumer.finish_consume()
+
+        consumer._event.set.assert_called_once_with()
+        consumer._thread.join.assert_called_once_with()
+
+    def test_log_consumer_context_manager(self):
+        with self.log.LogConsumer(mock.sentinel.log_queue) as consumer:
+            consumer._thread.start.assert_called_once_with()
+            self.assertFalse(consumer._thread.join.called)
+        self.assertTrue(consumer._thread.join.called)
+
+    @mock.patch('oslo_log.log.setup')
+    @mock.patch('oslo_log.log.getLogger')
+    @mock.patch('cloudbaseinit.utils.log.MultiprocessHandler')
+    def test_setup_worker(self, mock_MultiprocessHandler,
+                          mock_getLogger, mock_setup):
+
+        self.log.setup_worker(product_name='fake name',
+                              queue=mock.sentinel.queue)
+
+        mock_setup.assert_called_once_with(self.log.CONF, 'fake name')
+        mock_getLogger.assert_called_once_with('fake name')
+        mock_getLogger().logger.addHandler.assert_called_once_with(
+            mock_MultiprocessHandler.return_value)
+
+        mock_MultiprocessHandler.assert_called_once_with(mock.sentinel.queue)
+
+    def test_multiprocesshandler(self):
+        queue = six.moves.queue.Queue()
+        record = mock.Mock()
+        record.exc_info = None
+
+        handler = self.log.MultiprocessHandler(queue)
+        handler.emit(record)
+
+        self.assertIsNone(record.tb)
+        self.assertEqual(record.msg, record.getMessage.return_value)
+        self.assertIsNone(record.args)
+        self.assertIsNone(record.exc_info)
+
+    def test_multiprocesshandler_traceback(self):
+        queue = six.moves.queue.Queue()
+        try:
+            1 / 0
+        except Exception:
+            exc_info = sys.exc_info()
+        record = mock.Mock()
+        record.exc_info = exc_info
+
+        handler = self.log.MultiprocessHandler(queue)
+        handler.emit(record)
+
+        tb = "".join(traceback.format_exception(*exc_info))
+        self.assertEqual(tb, record.tb)

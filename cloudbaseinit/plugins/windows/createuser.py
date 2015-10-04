@@ -21,6 +21,7 @@ LOG = oslo_logging.getLogger(__name__)
 
 
 class CreateUserPlugin(createuser.BaseCreateUserPlugin):
+    optional_capabilities = required_capabilities = ()
 
     @staticmethod
     def _create_user_logon(user_name, password, osutils):

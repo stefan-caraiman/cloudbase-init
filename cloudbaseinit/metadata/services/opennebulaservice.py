@@ -23,6 +23,7 @@ import struct
 from oslo_log import log as oslo_logging
 import six
 
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.osutils import factory as osutils_factory
 from cloudbaseinit.utils import encoding
@@ -54,6 +55,12 @@ class OpenNebulaService(base.BaseMetadataService):
     Service able to expose OpenNebula metadata
     using information found in a mounted ISO file.
     """
+
+    supported_capabilities = (capabilities.INSTANCE_ID,
+                              capabilities.HOSTNAME,
+                              capabilities.USER_DATA,
+                              capabilities.PUBLIC_KEYS,
+                              capabilities.NETWORK_DETAILS)
 
     def __init__(self):
         super(OpenNebulaService, self).__init__()

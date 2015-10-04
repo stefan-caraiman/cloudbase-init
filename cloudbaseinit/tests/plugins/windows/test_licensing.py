@@ -88,7 +88,8 @@ class WindowsLicensingPluginTests(unittest.TestCase):
         mock_get_os_utils.return_value = mock_osutils
 
         with testutils.ConfPatcher('activate_windows', activate_windows):
-            response = self._licensing.execute(service=None, shared_data=None)
+            response = self._licensing.execute(service_group=None,
+                                               shared_data=None)
 
         mock_get_os_utils.assert_called_once_with()
         if nano:

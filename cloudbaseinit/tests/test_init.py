@@ -136,113 +136,82 @@ class TestInitManager(unittest.TestCase):
     def test_check_plugin_os_requirements_other_requirenments(self):
         self._test_check_plugin_os_requirements(('linux', (5, 2)))
 
-    @mock.patch('cloudbaseinit.init.InitManager.'
-                '_exec_plugin')
-    @mock.patch('cloudbaseinit.init.InitManager.'
-                '_check_plugin_os_requirements')
-    @mock.patch('cloudbaseinit.plugins.factory.load_plugins')
-    def _test_handle_plugins_stage(self, mock_load_plugins,
-                                   mock_check_plugin_os_requirements,
-                                   mock_exec_plugin,
-                                   reboot=True, fast_reboot=True):
-        stage = "fake stage"
-        service, instance_id = mock.Mock(), mock.Mock()
-        plugins = [mock.Mock() for _ in range(3)]
-        mock_check_plugin_os_requirements.return_value = True
-        mock_exec_plugin.return_value = reboot
-        mock_load_plugins.return_value = plugins
-        requirements_calls = [mock.call(self.osutils, plugin)
-                              for plugin in plugins]
-        exec_plugin_calls = [mock.call(self.osutils, service, plugin,
-                                       instance_id, {})
-                             for plugin in plugins]
-
-        with testutils.LogSnatcher('cloudbaseinit.init') as snatcher:
-            response = self._init._handle_plugins_stage(
-                self.osutils, service, instance_id, stage)
-        self.assertEqual(
-            ["Executing plugins for stage '{}':".format(stage)],
-            snatcher.output)
-        mock_load_plugins.assert_called_once_with(stage)
-        idx = 1 if (reboot and fast_reboot) else len(plugins)
-        mock_check_plugin_os_requirements.assert_has_calls(
-            requirements_calls[:idx])
-        mock_exec_plugin.assert_has_calls(exec_plugin_calls[:idx])
-        self.assertEqual(reboot, response)
-
-    def test_handle_plugins_stage(self):
-        self._test_handle_plugins_stage()
-
-    def test_handle_plugins_stage_no_reboot(self):
-        self._test_handle_plugins_stage(reboot=False, fast_reboot=False)
-
-    @testutils.ConfPatcher('allow_reboot', False)
-    def test_handle_plugins_stage_no_fast_reboot(self):
-        self._test_handle_plugins_stage(fast_reboot=False)
-
-    @mock.patch('cloudbaseinit.init.InitManager'
-                '._handle_plugins_stage')
     @mock.patch('cloudbaseinit.init.InitManager._check_latest_version')
+    @mock.patch.object(init, 'engine')
+    def _test_run_stages(self, mock_engine, mock_check_latest_version,
+                         side_effects, expected_calls):
+        engine = mock_engine.ExecutionEngine.return_value
+        engine.run_stage.side_effect = side_effects
+
+        result = self._init._run_stages()
+
+        mock_check_latest_version.assert_called_once_with()
+        mock_engine.ExecutionEngine.assert_called_once_with(
+            self._init)
+        exec_engine = mock_engine.ExecutionEngine.return_value
+        self.assertEqual(expected_calls, exec_engine.run_stage.mock_calls)
+        self.assertTrue(result)
+        exec_engine.terminate.assert_called_once_with()
+        if len(side_effects) == 3:
+            exec_engine.start_async_service_search.assert_called_once_with()
+        else:
+            self.assertFalse(exec_engine.called)
+
+    def test_run_stages_pre_networking(self):
+        side_effects = [True]
+        expected_calls = [mock.call(base.PLUGIN_STAGE_PRE_NETWORKING)]
+        self._test_run_stages(side_effects=side_effects,
+                              expected_calls=expected_calls)
+
+    def test_run_stages_pre_metadata_discover(self):
+        side_effects = [False, True]
+        expected_calls = [
+            mock.call(base.PLUGIN_STAGE_PRE_NETWORKING),
+            mock.call(base.PLUGIN_STAGE_PRE_METADATA_DISCOVERY),
+        ]
+        self._test_run_stages(side_effects=side_effects,
+                              expected_calls=expected_calls)
+
+    def test_run_stages_main(self):
+        side_effects = [False, False, True]
+        expected_calls = [
+            mock.call(base.PLUGIN_STAGE_PRE_NETWORKING),
+            mock.call(base.PLUGIN_STAGE_PRE_METADATA_DISCOVERY),
+            mock.call(base.PLUGIN_STAGE_MAIN),
+        ]
+        self._test_run_stages(side_effects=side_effects,
+                              expected_calls=expected_calls)
+
+    @mock.patch('cloudbaseinit.init.InitManager._run_stages')
     @mock.patch('cloudbaseinit.version.get_version')
-    @mock.patch('cloudbaseinit.plugins.factory.load_plugins')
     @mock.patch('cloudbaseinit.osutils.factory.get_os_utils')
-    @mock.patch('cloudbaseinit.metadata.factory.get_metadata_service')
-    def _test_configure_host(self, mock_get_metadata_service,
-                             mock_get_os_utils, mock_load_plugins,
-                             mock_get_version, mock_check_latest_version,
-                             mock_handle_plugins_stage,
+    def _test_configure_host(self, mock_get_os_utils,
+                             mock_get_version, mock_run_stages,
                              expected_logging,
-                             version, name, instance_id, reboot=True):
+                             version, reboot=True):
 
         mock_get_version.return_value = version
-        fake_service = mock.MagicMock()
-        fake_plugin = mock.MagicMock()
-        mock_load_plugins.return_value = [fake_plugin]
         mock_get_os_utils.return_value = self.osutils
-        mock_get_metadata_service.return_value = fake_service
-        fake_service.get_name.return_value = name
-        fake_service.get_instance_id.return_value = instance_id
-        mock_handle_plugins_stage.side_effect = [False, False, True]
-        stages = [
-            base.PLUGIN_STAGE_PRE_NETWORKING,
-            base.PLUGIN_STAGE_PRE_METADATA_DISCOVERY,
-            base.PLUGIN_STAGE_MAIN]
-        stage_calls_list = [[self.osutils, None, None, stage]
-                            for stage in stages]
-        stage_calls_list[2][1] = fake_service
-        stage_calls_list[2][2] = instance_id
-        stage_calls = [mock.call(*args) for args in stage_calls_list]
 
         with testutils.LogSnatcher('cloudbaseinit.init') as snatcher:
             self._init.configure_host()
         self.assertEqual(expected_logging, snatcher.output)
-        mock_check_latest_version.assert_called_once_with()
-        if CONF.reset_service_password:
-            self.osutils.reset_service_password.assert_called_once_with()
         self.osutils.wait_for_boot_completion.assert_called_once_with()
-        mock_get_metadata_service.assert_called_once_with()
-        fake_service.get_name.assert_called_once_with()
-        fake_service.get_instance_id.assert_called_once_with()
-        fake_service.cleanup.assert_called_once_with()
-        mock_handle_plugins_stage.assert_has_calls(stage_calls)
+
         if reboot:
             self.osutils.reboot.assert_called_once_with()
         else:
             self.assertFalse(self.osutils.reboot.called)
+        mock_run_stages.assert_called_once_with()
 
     def _test_configure_host_with_logging(self, extra_logging, reboot=True):
-        instance_id = 'fake id'
-        name = 'fake name'
         version = 'version'
         expected_logging = [
             'Cloudbase-Init version: %s' % version,
-            'Metadata service loaded: %r' % name,
-            'Instance id: %s' % instance_id,
         ]
         self._test_configure_host(
             expected_logging=expected_logging + extra_logging,
-            version=version, name=name, instance_id=instance_id,
-            reboot=reboot)
+            version=version, reboot=reboot)
 
     @testutils.ConfPatcher('allow_reboot', False)
     @testutils.ConfPatcher('stop_service_on_exit', False)

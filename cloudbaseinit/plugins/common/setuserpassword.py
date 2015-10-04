@@ -18,6 +18,7 @@ from oslo_log import log as oslo_logging
 
 from cloudbaseinit import conf as cloudbaseinit_conf
 from cloudbaseinit import constant
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.osutils import factory as osutils_factory
 from cloudbaseinit.plugins.common import base
 from cloudbaseinit.plugins.common import constants as plugin_constant
@@ -29,6 +30,11 @@ LOG = oslo_logging.getLogger(__name__)
 
 
 class SetUserPasswordPlugin(base.BasePlugin):
+
+    optional_capabilities = (capabilities.PUBLIC_KEYS,
+                             capabilities.ADMIN_PASSWORD,
+                             capabilities.POST_PASSWORD)
+    required_capabilities = ()
 
     def _encrypt_password(self, ssh_pub_key, password):
         cm = crypt.CryptManager()
@@ -114,15 +120,17 @@ class SetUserPasswordPlugin(base.BasePlugin):
             osutils = osutils_factory.get_os_utils()
             osutils.change_password_next_logon(username)
 
-    def execute(self, service, shared_data):
+    def execute(self, service_group, shared_data):
         # TODO(alexpilotti): The username selection logic must be set in the
         # CreateUserPlugin instead if using CONF.username
         user_name = shared_data.get(plugin_constant.SHARED_DATA_USERNAME,
                                     CONF.username)
-
         osutils = osutils_factory.get_os_utils()
+        admin_password_service = service_group.get_by_capabilities(
+            capabilities.ADMIN_PASSWORD)
+
         if osutils.user_exists(user_name):
-            password = self._set_password(service, osutils,
+            password = self._set_password(admin_password_service, osutils,
                                           user_name, shared_data)
             if password:
                 LOG.info('Password succesfully updated for user %s' %
@@ -130,13 +138,17 @@ class SetUserPasswordPlugin(base.BasePlugin):
                 # TODO(alexpilotti): encrypt with DPAPI
                 shared_data[plugin_constant.SHARED_DATA_PASSWORD] = password
 
-                if not service.can_post_password:
+                post_password_service = service_group.get_by_capabilities(
+                    capabilities.PUBLIC_KEYS,
+                    capabilities.POST_PASSWORD)
+                if not post_password_service.can_post_password:
                     LOG.info('Cannot set the password in the metadata as it '
                              'is not supported by this service')
                 else:
-                    self._set_metadata_password(password, service)
+                    self._set_metadata_password(
+                        password, post_password_service)
 
-        if service.can_update_password:
+        if admin_password_service.can_update_password:
             # If the metadata provider can update the password, the plugin
             # must run at every boot in order to update the password if
             # it was changed.

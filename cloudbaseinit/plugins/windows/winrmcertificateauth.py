@@ -16,6 +16,7 @@ from oslo_log import log as oslo_logging
 
 from cloudbaseinit import conf as cloudbaseinit_conf
 from cloudbaseinit import exception
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.osutils import factory as osutils_factory
 from cloudbaseinit.plugins.common import base
 from cloudbaseinit.plugins.common import constants
@@ -30,8 +31,11 @@ LOG = oslo_logging.getLogger(__name__)
 
 class ConfigWinRMCertificateAuthPlugin(base.BasePlugin):
 
+    optional_capabilities = (capabilities.ADMIN_PASSWORD, )
+    required_capabilities = (capabilities.AUTH_CERTS, )
+
     @staticmethod
-    def _get_credentials(service, shared_data):
+    def _get_credentials(service_group, shared_data):
         user_name = shared_data.get(constants.SHARED_DATA_USERNAME,
                                     CONF.username)
         if not user_name:
@@ -41,6 +45,14 @@ class ConfigWinRMCertificateAuthPlugin(base.BasePlugin):
 
         password = shared_data.get(constants.SHARED_DATA_PASSWORD)
         if not password:
+            try:
+                service = service_group.get_by_capabilities(
+                    capabilities.ADMIN_PASSWORD)
+            except exception.MissingCapabilityException:
+                raise exception.CloudbaseInitException(
+                    "Expected service does not have the ADMIN_PASSWORD "
+                    "capability.")
+
             password = service.get_admin_password()
             if not password:
                 raise exception.CloudbaseInitException(
@@ -54,9 +66,9 @@ class ConfigWinRMCertificateAuthPlugin(base.BasePlugin):
 
         return user_name, password
 
-    def execute(self, service, shared_data):
-        user_name, password = self._get_credentials(service, shared_data)
-
+    def execute(self, service_group, shared_data):
+        user_name, password = self._get_credentials(service_group, shared_data)
+        service = service_group.get_by_capabilities(capabilities.AUTH_CERTS)
         certs_data = service.get_client_auth_certs()
         if not certs_data:
             LOG.info("WinRM certificate authentication cannot be configured "

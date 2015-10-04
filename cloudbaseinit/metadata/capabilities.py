@@ -1,4 +1,4 @@
-# Copyright 2012 Cloudbase Solutions Srl
+# Copyright 2015 Cloudbase Solutions Srl
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -12,21 +12,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo_log import log as oslo_logging
-
-from cloudbaseinit import conf as cloudbaseinit_conf
-from cloudbaseinit.utils import classloader
-
-
-CONF = cloudbaseinit_conf.CONF
-LOG = oslo_logging.getLogger(__name__)
-
-
-def load_services():
-    """Get all the metadata service instances."""
-    services = []
-    cl = classloader.ClassLoader()
-    for class_path in CONF.metadata_services:
-        service = cl.load_class(class_path)()
-        services.append(service)
-    return services
+(
+    INSTANCE_ID,
+    USER_DATA,
+    PUBLIC_KEYS,
+    POST_PASSWORD,
+    ADMIN_PASSWORD,
+    HOSTNAME,
+    AUTH_CERTS,
+    NETWORK_DETAILS,
+) = range(8)

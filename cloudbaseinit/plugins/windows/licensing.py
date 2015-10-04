@@ -28,6 +28,8 @@ LOG = oslo_logging.getLogger(__name__)
 
 class WindowsLicensingPlugin(base.BasePlugin):
 
+    optional_capabilities = required_capabilities = ()
+
     def _run_slmgr(self, osutils, args):
         if osutils.check_sysnative_dir_exists():
             cscript_dir = osutils.get_sysnative_dir()
@@ -50,7 +52,7 @@ class WindowsLicensingPlugin(base.BasePlugin):
                                                      'out': out, 'err': err})
         return out
 
-    def execute(self, service, shared_data):
+    def execute(self, service_group, shared_data):
         osutils = osutils_factory.get_os_utils()
 
         if osutils.is_nano_server():

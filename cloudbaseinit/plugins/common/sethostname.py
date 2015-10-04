@@ -14,6 +14,7 @@
 
 from oslo_log import log as oslo_logging
 
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.osutils import factory as osutils_factory
 from cloudbaseinit.plugins.common import base
 from cloudbaseinit.utils import hostname
@@ -22,8 +23,13 @@ LOG = oslo_logging.getLogger(__name__)
 
 
 class SetHostNamePlugin(base.BasePlugin):
-    def execute(self, service, shared_data):
+
+    required_capabilities = (capabilities.HOSTNAME, )
+    optional_capabilities = ()
+
+    def execute(self, service_group, shared_data):
         osutils = osutils_factory.get_os_utils()
+        service = service_group.get_by_capabilities(capabilities.HOSTNAME)
         metadata_host_name = service.get_host_name()
 
         if not metadata_host_name:

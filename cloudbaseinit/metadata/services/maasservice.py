@@ -19,6 +19,7 @@ from oslo_log import log as oslo_logging
 import requests
 
 from cloudbaseinit import conf as cloudbaseinit_conf
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.utils import x509constants
 
@@ -39,6 +40,11 @@ class _Realm(str):
 
 class MaaSHttpService(base.BaseHTTPMetadataService):
     _METADATA_2012_03_01 = '2012-03-01'
+    supported_capabilities = (capabilities.HOSTNAME,
+                              capabilities.INSTANCE_ID,
+                              capabilities.PUBLIC_KEYS,
+                              capabilities.AUTH_CERTS,
+                              capabilities.USER_DATA)
 
     def __init__(self):
         super(MaaSHttpService, self).__init__(

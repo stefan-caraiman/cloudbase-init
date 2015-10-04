@@ -19,11 +19,17 @@ try:
     import unittest.mock as mock
 except ImportError:
     import mock
+from oslo_config import cfg
 
 from cloudbaseinit import exception
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.plugins.common import base
 from cloudbaseinit.plugins.common import constants
 from cloudbaseinit.tests import testutils
+
+
+CONF = cfg.CONF
+CONF.import_opt('username', 'cloudbaseinit.plugins.common.createuser')
 
 
 class ConfigWinRMCertificateAuthPluginTests(unittest.TestCase):
@@ -63,11 +69,12 @@ class ConfigWinRMCertificateAuthPluginTests(unittest.TestCase):
         self.assertEqual(expected_message, str(cm.exception))
 
     def test_get_credentials_no_password(self):
-        mock_service = mock.Mock()
+        mock_service_group = mock.Mock()
+        mock_service = mock_service_group.get_by_capabilities.return_value
         mock_service.get_admin_password.return_value = None
 
         with self.assertRaises(exception.CloudbaseInitException) as cm:
-            self._certif_auth._get_credentials(mock_service, {})
+            self._certif_auth._get_credentials(mock_service_group, {})
 
         expected_message = (
             "Cannot execute plugin as the password has not been set "
@@ -77,16 +84,20 @@ class ConfigWinRMCertificateAuthPluginTests(unittest.TestCase):
         mock_service.get_admin_password.assert_called_once_with()
 
     def test_get_credentials_get_admin_password(self):
-        mock_service = mock.Mock()
+        mock_service_group = mock.Mock()
+        mock_service = mock_service_group.get_by_capabilities.return_value
         mock_service.get_admin_password.return_value = mock.sentinel.password
         shared_data = {constants.SHARED_DATA_USERNAME: mock.sentinel.username}
 
-        result = self._certif_auth._get_credentials(mock_service, shared_data)
+        result = self._certif_auth._get_credentials(
+            mock_service_group, shared_data)
 
         self.assertIsNone(shared_data[constants.SHARED_DATA_PASSWORD])
         self.assertEqual((mock.sentinel.username, mock.sentinel.password),
                          result)
         mock_service.get_admin_password.assert_called_once_with()
+        mock_service_group.get_by_capabilities.assert_called_once_with(
+            capabilities.ADMIN_PASSWORD)
 
     @mock.patch('cloudbaseinit.plugins.windows.winrmcertificateauth'
                 '.ConfigWinRMCertificateAuthPlugin._get_credentials')
@@ -102,13 +113,14 @@ class ConfigWinRMCertificateAuthPluginTests(unittest.TestCase):
                       mock_import_cert, mock_WinRMConfig,
                       mock_get_credentials, cert_data, cert_upn):
         mock_osutils = mock.MagicMock()
-        mock_service = mock.MagicMock()
+        mock_service_group = mock.MagicMock()
         mock_cert_thumprint = mock.MagicMock()
         fake_credentials = ('fake user', 'fake password')
         mock_get_credentials.return_value = fake_credentials
 
         mock_import_cert.return_value = (mock_cert_thumprint, cert_upn)
         mock_WinRMConfig.get_cert_mapping.return_value = True
+        mock_service = mock_service_group.get_by_capabilities.return_value
         mock_service.get_client_auth_certs.return_value = [cert_data]
 
         mock_get_os_utils.return_value = mock_osutils
@@ -121,7 +133,7 @@ class ConfigWinRMCertificateAuthPluginTests(unittest.TestCase):
 
         expected_check_version_calls = [mock.call(6, 0), mock.call(6, 2)]
 
-        response = self._certif_auth.execute(mock_service,
+        response = self._certif_auth.execute(mock_service_group,
                                              shared_data='fake data')
 
         if not cert_data:
@@ -135,7 +147,7 @@ class ConfigWinRMCertificateAuthPluginTests(unittest.TestCase):
                              set_uac_rs.call_args_list)
 
             mock_get_credentials.assert_called_once_with(
-                mock_service, 'fake data')
+                mock_service_group, 'fake data')
             mock_import_cert.assert_called_once_with(
                 cert_data, store_name=self.winrmcert.x509.STORE_NAME_ROOT)
 

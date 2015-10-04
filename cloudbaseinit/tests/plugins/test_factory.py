@@ -12,7 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import itertools
+import collections
 import unittest
 
 try:
@@ -21,62 +21,39 @@ except ImportError:
     import mock
 
 from cloudbaseinit import conf as cloudbaseinit_conf
+from cloudbaseinit import exception
 from cloudbaseinit.plugins.common import base
 from cloudbaseinit.plugins import factory
 from cloudbaseinit.tests import testutils
 
 CONF = cloudbaseinit_conf.CONF
 
-STAGE = {
-    base.PLUGIN_STAGE_PRE_NETWORKING: [
-        'cloudbaseinit.plugins.windows.ntpclient.NTPClientPlugin'
-    ],
-    base.PLUGIN_STAGE_PRE_METADATA_DISCOVERY: [
-        'cloudbaseinit.plugins.common.mtu.MTUPlugin'
-    ],
-    base.PLUGIN_STAGE_MAIN: [
-        'cloudbaseinit.plugins.common.sethostname.SetHostNamePlugin',
-        'cloudbaseinit.plugins.windows.createuser.CreateUserPlugin',
-        'cloudbaseinit.plugins.common.networkconfig.NetworkConfigPlugin',
-        'cloudbaseinit.plugins.windows.licensing.WindowsLicensingPlugin',
-        'cloudbaseinit.plugins.common.sshpublickeys.'
-        'SetUserSSHPublicKeysPlugin',
-        'cloudbaseinit.plugins.windows.extendvolumes.ExtendVolumesPlugin',
-        'cloudbaseinit.plugins.common.userdata.UserDataPlugin',
-        'cloudbaseinit.plugins.common.setuserpassword.'
-        'SetUserPasswordPlugin',
-        'cloudbaseinit.plugins.windows.winrmlistener.'
-        'ConfigWinRMListenerPlugin',
-        'cloudbaseinit.plugins.windows.winrmcertificateauth.'
-        'ConfigWinRMCertificateAuthPlugin',
-        'cloudbaseinit.plugins.common.localscripts.LocalScriptsPlugin',
-    ]
-}
-
 
 class TestPluginFactory(unittest.TestCase):
 
     @mock.patch('cloudbaseinit.utils.classloader.ClassLoader.load_class')
-    def _test_load_plugins(self, mock_load_class, stage=None):
-        if stage:
-            expected_plugins = STAGE.get(stage, [])
-        else:
-            expected_plugins = list(itertools.chain(*STAGE.values()))
-        expected_load = [mock.call(path) for path in CONF.plugins]
-        side_effect = []
-        for path in expected_plugins:
-            plugin = mock.Mock()
-            plugin.execution_stage = (stage if stage in STAGE.keys() else
-                                      None)
-            plugin.return_value = path
-            side_effect.append(plugin)
-        mock_load_class.side_effect = (
-            side_effect + [mock.Mock() for _ in range(len(expected_load) -
-                                                      len(side_effect))])
+    def _test_load_plugins(self, mock_load_class,
+                           stage=base.PLUGIN_STAGE_MAIN):
+        def func(arg):
+            loaded = mock.MagicMock()
+            loaded.return_value = arg
+            return loaded
+
+        mock_load_class.side_effect = func
+        expected_plugins = collections.defaultdict(list)
+        plugins = factory.PLUGINS_BY_STAGES.get(stage, {})
+        expected_load = list(map(mock.call, plugins.keys()))
+        for plugin, priority in plugins.items():
+            expected_plugins[priority].append(plugin)
+        by_priority = sorted(expected_plugins.items(), reverse=False)
+        expected_plugins = [values for (_, values) in by_priority]
 
         response = factory.load_plugins(stage)
-        self.assertEqual(expected_load, mock_load_class.call_args_list)
-        self.assertEqual(sorted(expected_plugins), sorted(response))
+
+        self.assertEqual(sorted(expected_load),
+                         sorted(mock_load_class.call_args_list))
+        for expected_group, actual_group in zip(expected_plugins, response):
+            self.assertEqual(sorted(expected_group), sorted(actual_group))
 
     def test_load_plugins(self):
         self._test_load_plugins()
@@ -90,18 +67,14 @@ class TestPluginFactory(unittest.TestCase):
     def test_load_plugins_metadata(self):
         self._test_load_plugins(stage=base.PLUGIN_STAGE_PRE_METADATA_DISCOVERY)
 
-    def test_load_plugins_empty(self):
-        self._test_load_plugins(stage=mock.Mock())
+    def test_load_plugins_stage_missing(self):
+        with self.assertRaises(KeyError):
+            factory.load_plugins(mock.Mock())
 
     @testutils.ConfPatcher('plugins', ['missing.plugin'])
     def test_load_plugins_plugin_failed(self):
-        with testutils.LogSnatcher('cloudbaseinit.plugins.'
-                                   'factory') as snatcher:
-            plugins = factory.load_plugins(None)
-
+        plugins = factory.load_plugins(base.PLUGIN_STAGE_MAIN)
         self.assertEqual([], plugins)
-        self.assertEqual(["Could not import plugin module 'missing.plugin'"],
-                         snatcher.output)
 
     @testutils.ConfPatcher('plugins', ["cloudbaseinit.plugins.windows."
                                        "localscripts.LocalScriptsPlugin"])
@@ -109,7 +82,7 @@ class TestPluginFactory(unittest.TestCase):
     def test_old_plugin_mapping(self, mock_load_class):
         with testutils.LogSnatcher('cloudbaseinit.plugins.'
                                    'factory') as snatcher:
-            factory.load_plugins(None)
+            plugins = list(factory._new_plugin_names(CONF.plugins))
 
         expected = [
             "Old plugin module 'cloudbaseinit.plugins.windows."
@@ -118,8 +91,23 @@ class TestPluginFactory(unittest.TestCase):
             "localscripts.LocalScriptsPlugin'. The old name will not "
             "be supported starting with cloudbaseinit 1.0",
         ]
-        expected_call = mock.call('cloudbaseinit.plugins.common.'
-                                  'localscripts.LocalScriptsPlugin')
+        expected_plugin = ('cloudbaseinit.plugins.common.'
+                           'localscripts.LocalScriptsPlugin')
         self.assertEqual(expected, snatcher.output)
-        called = mock_load_class.mock_calls[0]
-        self.assertEqual(expected_call, called)
+        self.assertEqual([expected_plugin], plugins)
+
+    @mock.patch.object(factory, '_DEPENDENCIES', {'a': ('b', )})
+    def _test_check_dependencies(self, expected):
+        with self.assertRaises(exception.CloudbaseInitException) as cm:
+            factory.check_dependencies()
+        self.assertEqual(expected, str(cm.exception))
+
+    @testutils.ConfPatcher('plugins', ['b'])
+    def test_check_dependencies_parent_not_found(self):
+        msg = "Plugin 'b' found, but it depends on 'a'."
+        self._test_check_dependencies(msg)
+
+    @testutils.ConfPatcher('plugins', ['b', 'a'])
+    def test_check_dependencies_child_before_parent(self):
+        msg = "Child plugin 'b' found before parent plugin 'a'"
+        self._test_check_dependencies(msg)

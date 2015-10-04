@@ -18,6 +18,7 @@ import re
 from oslo_log import log as oslo_logging
 
 from cloudbaseinit import exception
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.metadata.services import base as service_base
 from cloudbaseinit.osutils import factory as osutils_factory
 from cloudbaseinit.plugins.common import base as plugin_base
@@ -121,8 +122,13 @@ def _preprocess_nics(network_details, network_adapters):
 
 class NetworkConfigPlugin(plugin_base.BasePlugin):
 
-    def execute(self, service, shared_data):
+    required_capabilities = (capabilities.NETWORK_DETAILS, )
+    optional_capabilities = ()
+
+    def execute(self, service_group, shared_data):
         osutils = osutils_factory.get_os_utils()
+        service = service_group.get_by_capabilities(
+            capabilities.NETWORK_DETAILS)
         network_details = service.get_network_details()
         if not network_details:
             return plugin_base.PLUGIN_EXECUTION_DONE, False

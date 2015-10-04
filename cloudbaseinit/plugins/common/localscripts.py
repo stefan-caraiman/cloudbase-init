@@ -24,11 +24,13 @@ CONF = cloudbaseinit_conf.CONF
 
 class LocalScriptsPlugin(base.BasePlugin):
 
+    optional_capabilities = required_capabilities = ()
+
     def _get_files_in_dir(self, path):
         return sorted([os.path.join(path, f) for f in os.listdir(path)
                        if os.path.isfile(os.path.join(path, f))])
 
-    def execute(self, service, shared_data):
+    def execute(self, service_group, shared_data):
         plugin_status = base.PLUGIN_EXECUTION_DONE
         reboot = False
 

@@ -29,6 +29,8 @@ CONF = cloudbaseinit_conf.CONF
 
 class CreateUserPlugin(createuser.BaseCreateUserPlugin):
 
+    optional_capabilities = required_capabilities = ()
+
     def create_user(self, username, password, osutils):
         pass
 

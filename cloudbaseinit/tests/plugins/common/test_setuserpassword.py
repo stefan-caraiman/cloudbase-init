@@ -233,7 +233,8 @@ class SetUserPasswordPluginTests(unittest.TestCase):
     def _test_execute(self, mock_get_os_utils, mock_set_metadata_password,
                       mock_set_password, is_password_set,
                       can_post_password, can_update_password=False):
-        mock_service = mock.MagicMock()
+        mock_service_group = mock.Mock()
+        mock_service = mock_service_group.get_by_capabilities.return_value
         mock_osutils = mock.MagicMock()
         fake_shared_data = mock.MagicMock()
         fake_shared_data.get.return_value = 'fake username'
@@ -246,7 +247,7 @@ class SetUserPasswordPluginTests(unittest.TestCase):
 
         with testutils.LogSnatcher('cloudbaseinit.plugins.common.'
                                    'setuserpassword') as snatcher:
-            response = self._setpassword_plugin.execute(mock_service,
+            response = self._setpassword_plugin.execute(mock_service_group,
                                                         fake_shared_data)
         mock_get_os_utils.assert_called_once_with()
         fake_shared_data.get.assert_called_with(
@@ -274,10 +275,16 @@ class SetUserPasswordPluginTests(unittest.TestCase):
 
         self.assertEqual(expected_logging, snatcher.output)
 
-    def test_execute(self):
+    def test_execute_password_not_set_cant_post_password(self):
         self._test_execute(is_password_set=False, can_post_password=False)
+
+    def test_execute_password_set_can_post_password(self):
         self._test_execute(is_password_set=True, can_post_password=True)
+
+    def test_execute_password_not_set_can_post_password(self):
         self._test_execute(is_password_set=False, can_post_password=True)
+
+    def test_execute_password_set_can_post_password_can_update_password(self):
         self._test_execute(is_password_set=True, can_post_password=True,
                            can_update_password=True)
 

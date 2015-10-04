@@ -23,6 +23,7 @@ try:
 except ImportError:
     import mock
 
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.metadata.services import base as metadata_services_base
 from cloudbaseinit.plugins.common import base
 from cloudbaseinit.plugins.common import userdata
@@ -54,10 +55,11 @@ class UserDataPluginTest(unittest.TestCase):
     @mock.patch('cloudbaseinit.plugins.common.userdata.UserDataPlugin'
                 '._process_user_data')
     def _test_execute(self, mock_process_user_data, ret_val):
-        mock_service = mock.MagicMock()
+        mock_service_group = mock.MagicMock()
+        mock_service = mock_service_group.get_by_capabilities.return_value
         mock_service.get_decoded_user_data.side_effect = [ret_val]
 
-        response = self._userdata.execute(service=mock_service,
+        response = self._userdata.execute(service_group=mock_service_group,
                                           shared_data=None)
 
         mock_service.get_decoded_user_data.assert_called_once_with()
@@ -65,6 +67,8 @@ class UserDataPluginTest(unittest.TestCase):
             self.assertEqual(response, (base.PLUGIN_EXECUTION_DONE, False))
         elif ret_val is None:
             self.assertEqual(response, (base.PLUGIN_EXECUTION_DONE, False))
+        mock_service_group.get_by_capabilities.assert_called_once_with(
+            capabilities.USER_DATA)
 
     def test_execute(self):
         self._test_execute(ret_val='fake_data')
@@ -326,10 +330,13 @@ class TestCloudConfig(unittest.TestCase):
                                                    b64_binary=b64_binary,
                                                    gzip=gz,
                                                    gzip_binary=gz_binary))
+        service_group = mock.Mock()
+        service_group.get_by_capabilities.return_value = service
+
         with testutils.LogSnatcher('cloudbaseinit.plugins.'
                                    'common.userdataplugins.'
                                    'cloudconfigplugins') as snatcher:
-            status, reboot = self.plugin.execute(service, {})
+            status, reboot = self.plugin.execute(service_group, {})
 
         for path in (b64, b64_binary, gz, gz_binary):
             self.assertTrue(os.path.exists(path),
@@ -346,3 +353,5 @@ class TestCloudConfig(unittest.TestCase):
             'Fail to process permissions None, assuming 420'
         ]
         self.assertEqual(expected_logging, snatcher.output)
+        service_group.get_by_capabilities.assert_called_once_with(
+            capabilities.USER_DATA)

@@ -14,10 +14,12 @@
 
 import logging
 import serial
-import six
+import threading
+import traceback
 
 from oslo_log import formatters
 from oslo_log import log
+import six
 
 from cloudbaseinit import conf as cloudbaseinit_conf
 
@@ -66,6 +68,48 @@ class SerialPortHandler(logging.StreamHandler):
             self._port.close()
 
 
+class MultiprocessHandler(logging.Handler):
+    """Logging handler which emits records into a given queue."""
+
+    def __init__(self, queue):
+        self.queue = queue
+        logging.Handler.__init__(self)
+
+    def _enqueue(self, record):
+        self.queue.put_nowait(record)
+
+    def _prepare(self, record):
+        record.tb = None
+        if record.exc_info:
+            tb = "".join(traceback.format_exception(*record.exc_info))
+            record.tb = tb
+
+        record.msg = record.getMessage()
+        # Reset the arguments and the exc_info members, because
+        # they can contain objects which aren't picklable, which
+        # is actually the case for traceback objects.
+        record.args = None
+        record.exc_info = None
+        return record
+
+    def emit(self, record):
+        self._enqueue(self._prepare(record))
+
+
+def _consume_log_queue(process_queue, event):
+    while not event.is_set():
+        try:
+            record = process_queue.get(timeout=0.5)
+        except six.moves.queue.Empty:
+            continue
+
+        # Use the underlying logger member because we need
+        # to process the log record we have.
+        LOG.logger.handle(record)
+        if record.tb:
+            LOG.info(record.tb)
+
+
 def setup(product_name):
     log.setup(CONF, product_name)
 
@@ -79,3 +123,36 @@ def setup(product_name):
         serialportlog.setFormatter(
             formatters.ContextFormatter(project=product_name,
                                         datefmt=datefmt))
+
+
+def setup_worker(product_name, queue):
+    log.setup(CONF, product_name)
+    logging.basicConfig(level=logging.DEBUG)
+
+    logger = log.getLogger(product_name).logger
+    pipe_handler = MultiprocessHandler(queue)
+    logger.addHandler(pipe_handler)
+    logger.propagate = False
+
+
+class LogConsumer(object):
+    """Consume logs from the given queue."""
+
+    def __init__(self, log_queue):
+        self._event = threading.Event()
+        self._thread = threading.Thread(target=_consume_log_queue,
+                                        args=(log_queue, self._event))
+
+    def start_consume(self):
+        self._thread.start()
+
+    def finish_consume(self):
+        self._event.set()
+        self._thread.join()
+
+    def __enter__(self):
+        self.start_consume()
+        return self
+
+    def __exit__(self, *_):
+        self.finish_consume()

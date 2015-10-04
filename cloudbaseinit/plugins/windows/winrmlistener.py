@@ -29,6 +29,7 @@ LOG = oslo_logging.getLogger(__name__)
 class ConfigWinRMListenerPlugin(base.BasePlugin):
     _cert_subject = "CN=Cloudbase-Init WinRM"
     _winrm_service_name = "WinRM"
+    optional_capabilities = required_capabilities = ()
 
     def _check_winrm_service(self, osutils):
         if not osutils.check_service_exists(self._winrm_service_name):
@@ -50,7 +51,7 @@ class ConfigWinRMListenerPlugin(base.BasePlugin):
 
         return True
 
-    def execute(self, service, shared_data):
+    def execute(self, service_group, shared_data):
         osutils = osutils_factory.get_os_utils()
         security_utils = security.WindowsSecurityUtils()
 

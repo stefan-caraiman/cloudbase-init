@@ -53,3 +53,7 @@ class WindowsCloudbaseInitException(CloudbaseInitException):
         except TypeError:
             formatted_msg = msg
         super(WindowsCloudbaseInitException, self).__init__(formatted_msg)
+
+
+class MissingCapabilityException(CloudbaseInitException):
+    pass

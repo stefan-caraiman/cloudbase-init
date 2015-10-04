@@ -20,6 +20,7 @@ from six.moves import http_client
 from six.moves import urllib
 
 from cloudbaseinit import conf as cloudbaseinit_conf
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.osutils import factory as osutils_factory
 from cloudbaseinit.utils import encoding
@@ -33,6 +34,13 @@ TIMEOUT = 10
 
 
 class CloudStack(base.BaseHTTPMetadataService):
+
+    URI_TEMPLATE = 'http://%s/latest/meta-data/'
+    supported_capabilities = (capabilities.INSTANCE_ID,
+                              capabilities.HOSTNAME,
+                              capabilities.USER_DATA,
+                              capabilities.PUBLIC_KEYS,
+                              capabilities.ADMIN_PASSWORD)
 
     def __init__(self):
         # Note: The base url used by the current metadata service will be

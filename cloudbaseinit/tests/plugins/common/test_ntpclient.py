@@ -25,10 +25,15 @@ from cloudbaseinit.tests import testutils
 from cloudbaseinit.utils import dhcp
 
 
+class NTPClientPlugin(ntpclient.NTPClientPlugin):
+
+    optional_capabilities = required_capabilities = ()
+
+
 class NTPClientPluginTests(unittest.TestCase):
 
     def setUp(self):
-        self._ntpclient = ntpclient.NTPClientPlugin()
+        self._ntpclient = NTPClientPlugin()
 
     @testutils.ConfPatcher('ntp_use_dhcp_config', True)
     @mock.patch('cloudbaseinit.osutils.factory.get_os_utils')
@@ -45,7 +50,7 @@ class NTPClientPluginTests(unittest.TestCase):
         # see the expected result.
         mock_unpack_ntp_hosts.side_effect = original_unpack_hosts
 
-        mock_service = mock.MagicMock()
+        mock_service_group = mock.MagicMock()
         mock_osutils = mock.MagicMock()
         mock_options_data = mock.MagicMock()
 
@@ -55,7 +60,7 @@ class NTPClientPluginTests(unittest.TestCase):
         mock_get_dhcp_options.return_value = mock_options_data
         mock_options_data.get.return_value = ntp_data
 
-        response = self._ntpclient.execute(service=mock_service,
+        response = self._ntpclient.execute(service_group=mock_service_group,
                                            shared_data='fake data')
 
         mock_osutils.get_dhcp_hosts_in_use.assert_called_once_with()

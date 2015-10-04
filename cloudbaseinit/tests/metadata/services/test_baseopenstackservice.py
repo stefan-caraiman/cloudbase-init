@@ -35,6 +35,7 @@ MODPATH = "cloudbaseinit.metadata.services.baseopenstackservice"
 
 
 class FinalBaseOpenStackService(baseopenstackservice.BaseOpenStackService):
+    supported_capabilities = ()
 
     def _get_data(self):
         pass

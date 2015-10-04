@@ -26,7 +26,6 @@ LOG = oslo_logging.getLogger(__name__)
 
 
 class NTPClientPlugin(base.BasePlugin):
-    execution_stage = base.PLUGIN_STAGE_PRE_NETWORKING
 
     def verify_time_service(self, osutils):
         """Verify that the time service is up.
@@ -41,7 +40,7 @@ class NTPClientPlugin(base.BasePlugin):
                   for index in range(0, len(ntp_option_data), 4)]
         return list(map(socket.inet_ntoa, chunks))
 
-    def execute(self, service, shared_data):
+    def execute(self, service_group, shared_data):
         if CONF.ntp_use_dhcp_config:
             osutils = osutils_factory.get_os_utils()
             dhcp_hosts = osutils.get_dhcp_hosts_in_use()

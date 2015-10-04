@@ -18,7 +18,7 @@ import sys
 from oslo_log import log as oslo_logging
 
 from cloudbaseinit import conf as cloudbaseinit_conf
-from cloudbaseinit.metadata import factory as metadata_factory
+from cloudbaseinit import engine
 from cloudbaseinit.osutils import factory as osutils_factory
 from cloudbaseinit.plugins.common import base as plugins_base
 from cloudbaseinit.plugins import factory as plugins_factory
@@ -96,22 +96,35 @@ class InitManager(object):
                 LOG.info, 'Found new version of cloudbase-init %s')
             version.check_latest_version(log_version)
 
-    def _handle_plugins_stage(self, osutils, service, instance_id, stage):
-        plugins_shared_data = {}
-        reboot_required = False
-        plugins = plugins_factory.load_plugins(stage)
+    def exec_plugin(self, service, plugin, plugins_shared_data):
+        instance_id = None
+        if service:
+            instance_id = service.get_instance_id()
+        osutils = osutils_factory.get_os_utils()
+        if self._check_plugin_os_requirements(osutils, plugin):
+            return self._exec_plugin(osutils, service, plugin,
+                                     instance_id, plugins_shared_data)
 
-        LOG.info('Executing plugins for stage %r:', stage)
+    def _run_stages(self):
+        plugins_factory.check_dependencies()
+        exec_engine = engine.ExecutionEngine(self)
+        try:
+            reboot_required = exec_engine.run_stage(
+                plugins_base.PLUGIN_STAGE_PRE_NETWORKING)
 
-        for plugin in plugins:
-            if self._check_plugin_os_requirements(osutils, plugin):
-                if self._exec_plugin(osutils, service, plugin,
-                                     instance_id, plugins_shared_data):
-                    reboot_required = True
-                    if CONF.allow_reboot:
-                        break
+            self._check_latest_version()
 
-        return reboot_required
+            if not (reboot_required and CONF.allow_reboot):
+                reboot_required = exec_engine.run_stage(
+                    plugins_base.PLUGIN_STAGE_PRE_METADATA_DISCOVERY)
+
+            if not (reboot_required and CONF.allow_reboot):
+                exec_engine.start_async_service_search()
+                reboot_required = exec_engine.run_stage(
+                    plugins_base.PLUGIN_STAGE_MAIN)
+            return reboot_required
+        finally:
+            exec_engine.terminate()
 
     def configure_host(self):
         LOG.info('Cloudbase-Init version: %s', version.get_version())
@@ -122,31 +135,7 @@ class InitManager(object):
             osutils.reset_service_password()
         osutils.wait_for_boot_completion()
 
-        reboot_required = self._handle_plugins_stage(
-            osutils, None, None,
-            plugins_base.PLUGIN_STAGE_PRE_NETWORKING)
-
-        self._check_latest_version()
-
-        if not (reboot_required and CONF.allow_reboot):
-            reboot_required = self._handle_plugins_stage(
-                osutils, None, None,
-                plugins_base.PLUGIN_STAGE_PRE_METADATA_DISCOVERY)
-
-        if not (reboot_required and CONF.allow_reboot):
-            service = metadata_factory.get_metadata_service()
-            LOG.info('Metadata service loaded: \'%s\'' %
-                     service.get_name())
-
-            instance_id = service.get_instance_id()
-            LOG.debug('Instance id: %s', instance_id)
-
-            try:
-                reboot_required = self._handle_plugins_stage(
-                    osutils, service, instance_id,
-                    plugins_base.PLUGIN_STAGE_MAIN)
-            finally:
-                service.cleanup()
+        reboot_required = self._run_stages()
 
         if reboot_required and CONF.allow_reboot:
             try:

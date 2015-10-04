@@ -16,6 +16,7 @@ from oslo_log import log as oslo_logging
 from six.moves.urllib import error
 
 from cloudbaseinit import conf as cloudbaseinit_conf
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.metadata.services import baseopenstackservice as baseos
 from cloudbaseinit.utils import network
@@ -26,6 +27,13 @@ LOG = oslo_logging.getLogger(__name__)
 
 class HttpService(base.BaseHTTPMetadataService, baseos.BaseOpenStackService):
     _POST_PASSWORD_MD_VER = '2013-04-04'
+    supported_capabilities = (capabilities.USER_DATA,
+                              capabilities.INSTANCE_ID,
+                              capabilities.HOSTNAME,
+                              capabilities.PUBLIC_KEYS,
+                              capabilities.NETWORK_DETAILS,
+                              capabilities.POST_PASSWORD,
+                              capabilities.AUTH_CERTS)
 
     def __init__(self):
         super(HttpService, self).__init__(
@@ -33,6 +41,9 @@ class HttpService(base.BaseHTTPMetadataService, baseos.BaseOpenStackService):
             https_allow_insecure=CONF.openstack.https_allow_insecure,
             https_ca_bundle=CONF.openstack.https_ca_bundle)
         self._enable_retry = True
+
+    def aggregated_group(self):
+        return base.OpenstackAggregateService
 
     def load(self):
         super(HttpService, self).load()

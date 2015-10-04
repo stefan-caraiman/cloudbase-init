@@ -16,6 +16,7 @@ import email
 
 from oslo_log import log as oslo_logging
 
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.metadata.services import base as metadata_services_base
 from cloudbaseinit.plugins.common import base
 from cloudbaseinit.plugins.common import execcmd
@@ -32,7 +33,11 @@ class UserDataPlugin(base.BasePlugin):
     _PART_HANDLER_CONTENT_TYPE = "text/part-handler"
     _GZIP_MAGIC_NUMBER = b'\x1f\x8b'
 
-    def execute(self, service, shared_data):
+    required_capabilities = (capabilities.USER_DATA, )
+    optional_capabilities = ()
+
+    def execute(self, service_group, shared_data):
+        service = service_group.get_by_capabilities(capabilities.USER_DATA)
         try:
             user_data = service.get_decoded_user_data()
         except metadata_services_base.NotExistingMetadataException:

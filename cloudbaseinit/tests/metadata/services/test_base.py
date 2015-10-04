@@ -12,15 +12,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import mock
 import requests
 import unittest
+
+try:
+    import unittest.mock as mock
+except ImportError:
+    import mock
 
 from cloudbaseinit import exception
 from cloudbaseinit.metadata.services import base
 
 
 class FakeService(base.BaseMetadataService):
+
+    supported_capabilities = ()
+
     def _get_data(self):
         return (b'\x1f\x8b\x08\x00\x93\x90\xf2U\x02'
                 b'\xff\xcbOSH\xce/-*NU\xc8,Q(\xcf/\xca.'
@@ -152,3 +159,50 @@ class TestBaseHTTPMetadataService(unittest.TestCase):
         ssl_error = requests.exceptions.SSLError()
         self._test_get_data(expected_response=ssl_error,
                             expected_value=exception.CertificateVerifyFailed)
+
+
+class TestAggregateService(unittest.TestCase):
+
+    def test_get_by_capabilities(self):
+        class Service(object):
+            supported_capabilities = {1, 2, 3}
+
+        class Service2(object):
+            supported_capabilities = {2, 3}
+
+        first_service = Service()
+        second_service = Service2()
+        aggregate = base.AggregateService(first_service, second_service)
+
+        service = aggregate.get_by_capabilities(2, 3)
+        self.assertEqual(service, second_service)
+        service = aggregate.get_by_capabilities(1, 3, 2)
+        self.assertEqual(service, first_service)
+
+        with self.assertRaises(exception.MissingCapabilityException) as cm:
+            aggregate.get_by_capabilities()
+        self.assertEqual("No service found with all the required "
+                         "capabilities.", str(cm.exception))
+
+    def test_openstack_aggregated_service_instance_id(self):
+        class EC2Service(object):
+            def get_name(self):
+                return 'EC2Service'
+
+            def get_instance_id(self):
+                return mock.sentinel.ec2_instance_id
+
+        class OtherService(object):
+            def get_name(self):
+                return 'HTTPService'
+
+            def get_instance_id(self):
+                return mock.sentinel.http_instance_id
+
+        ec2 = EC2Service()
+        other = OtherService()
+        aggregated = base.OpenstackAggregateService(ec2, other)
+
+        instance_id = aggregated.get_instance_id()
+
+        self.assertEqual(instance_id, mock.sentinel.http_instance_id)

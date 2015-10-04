@@ -16,6 +16,7 @@
 from oslo_log import log as oslo_logging
 
 from cloudbaseinit import conf as cloudbaseinit_conf
+from cloudbaseinit.metadata import capabilities
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.utils import network
 
@@ -25,6 +26,9 @@ LOG = oslo_logging.getLogger(__name__)
 
 class EC2Service(base.BaseHTTPMetadataService):
     _metadata_version = '2009-04-04'
+    supported_capabilities = (capabilities.HOSTNAME,
+                              capabilities.INSTANCE_ID,
+                              capabilities.PUBLIC_KEYS)
 
     def __init__(self):
         super(EC2Service, self).__init__(
@@ -32,6 +36,9 @@ class EC2Service(base.BaseHTTPMetadataService):
             https_allow_insecure=CONF.ec2.https_allow_insecure,
             https_ca_bundle=CONF.ec2.https_ca_bundle)
         self._enable_retry = True
+
+    def aggregated_group(self):
+        return base.OpenstackAggregateService
 
     def load(self):
         super(EC2Service, self).load()
