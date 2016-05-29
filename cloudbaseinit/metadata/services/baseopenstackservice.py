@@ -36,6 +36,109 @@ CONF.register_opts(opts)
 LOG = oslo_logging.getLogger(__name__)
 
 
+class _OpenStackNetworkAdapter(base.BaseNetworkAdapter):
+
+    """OpenStack Service Network Adapter."""
+
+    FIELDS = {
+        base.LINK: {
+            base.NAME: base.Field(base.NAME, debiface.NAME,
+                                  required=True),
+            base.MAC_ADDRESS: base.Field(base.MAC_ADDRESS, debiface.MAC,
+                                         required=True),
+        },
+        base.NETWORK: {
+            base.IP_ADDRESS: base.Field(base.IP_ADDRESS, debiface.ADDRESS,
+                                        required=True),
+            base.NETMASK: base.Field(base.NETMASK, debiface.NETMASK,
+                                     required=True),
+            base.GATEWAY: base.Field(base.GATEWAY, debiface.GATEWAY,
+                                     required=True),
+            base.DNS: base.Field(base.DNS, debiface.DNSNS,
+                                 default=[], required=False),
+        },
+    }
+
+    def __init__(self, service, content):
+        super(_OpenStackNetworkAdapter, self).__init__(service)
+        self._links = {}
+        self._networks = {}
+        self._digest(content)
+
+    def _digest_network(self, link, raw_subnets):
+        """Digest the information related to networks."""
+        networks = self._networks.setdefault(link[base.NAME], [])
+        raw_networks = [
+            self.get_fields(self.fields[base.NETWORK], raw_subnets),
+            {
+                base.IP_ADDRESS: raw_subnets.get(debiface.ADDRESS6),
+                base.NETMASK: raw_subnets.get(debiface.NETMASK6),
+                base.GATEWAY: raw_subnets.get(debiface.GATEWAY6),
+            }
+        ]
+        for network in raw_networks:
+            network.update(self._digest_interface(
+                network[base.IP_ADDRESS], network[base.NETMASK]))
+            networks.append(network)
+
+    def _digest(self, network_data):
+        """Digest the received network information."""
+        for raw_link in debiface.parse(network_data):
+            try:
+                link = self.get_fields(self.fields[base.LINK], raw_link)
+                self._links[link[base.NAME]] = link
+                self._digest_network(link, raw_link)
+            except TypeError:
+                # Note(alexandrucoman): The current raw_link do not contain
+                #                       all the required fields.
+                continue
+
+    def get_link(self, name):
+        """Return all the available information regarding the received
+        link name.
+
+        :rtype: dict
+
+        .. notes:
+            The returned dictionary should contain al least the following
+            keys: `name` and `mac_address`.
+        """
+        return self._links.get(name)
+
+    def get_links(self):
+        """Return a list with the names of the available links.
+
+        :rtype: list
+        """
+        return self._links.keys()
+
+    def get_network(self, link, name):
+        """Return all the available information regarding the required
+        network.
+
+        :param link: The name of the required link
+        :type link:  str
+        :param name: The name of the required network
+        :type name: str
+
+        .. notes:
+            The returned dictionary should contain al least the following
+            keys: `name`, `type`, `ip_address`, `netmask`, `brodcast` and
+            `dns_nameservers`.
+        """
+        return self._networks[link][name]
+
+    def get_networks(self, link):
+        """Returns all the network names bound by the required link.
+
+        :param link: The name of the required link
+        :type link:  str
+
+        :rtype: list
+        """
+        return range(0, len(self._networks[link]))
+
+
 class BaseOpenStackService(base.BaseMetadataService):
 
     def get_content(self, name):
@@ -74,20 +177,6 @@ class BaseOpenStackService(base.BaseMetadataService):
                 if key_dict["type"] == "ssh":
                     public_keys.append(key_dict["data"])
         return list(set((key.strip() for key in public_keys)))
-
-    def get_network_details(self):
-        network_config = self._get_meta_data().get('network_config')
-        if not network_config:
-            return None
-        key = "content_path"
-        if key not in network_config:
-            return None
-
-        content_name = network_config[key].rsplit("/", 1)[-1]
-        content = self.get_content(content_name)
-        content = encoding.get_as_string(content)
-
-        return debiface.parse(content)
 
     def get_admin_password(self):
         meta_data = self._get_meta_data()
@@ -144,3 +233,17 @@ class BaseOpenStackService(base.BaseMetadataService):
                 LOG.debug("user_data metadata not present")
 
         return list(set((cert.strip() for cert in certs)))
+
+    def get_network_adapter(self):
+        network_config = self._get_meta_data().get('network_config')
+        if not network_config:
+            return None
+        key = "content_path"
+        if key not in network_config:
+            return None
+
+        content_name = network_config[key].rsplit("/", 1)[-1]
+        content = self.get_content(content_name)
+        content = encoding.get_as_string(content)
+
+        return _OpenStackNetworkAdapter(self, content)

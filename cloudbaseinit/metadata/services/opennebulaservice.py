@@ -17,8 +17,6 @@
 
 import os
 import re
-import socket
-import struct
 
 from oslo_log import log as oslo_logging
 import six
@@ -47,6 +45,144 @@ GATEWAY = ["ETH{iid}_GATEWAY"]
 DNSNS = ["ETH{iid}_DNS"]
 
 
+class OpenNebulaNetworkAdapter(base.BaseNetworkAdapter):
+
+    """Open Nebula Network Adapter."""
+
+    def __init__(self, service):
+        super(OpenNebulaNetworkAdapter, self).__init__(service)
+        self._links = {}
+        self._networks = {}
+
+    @staticmethod
+    def _calculate_netmask(address, gateway):
+        """Try to determine a default netmask.
+
+        It is a simple, frequent and dummy prediction
+        based on the provided IP and gateway addresses.
+        """
+        address_chunks = address.split(".")
+        gateway_chunks = gateway.split(".")
+        netmask_chunks = []
+        for achunk, gchunk in six.moves.zip(
+                address_chunks, gateway_chunks):
+            if achunk == gchunk:
+                nchunk = "255"
+            else:
+                nchunk = "0"
+            netmask_chunks.append(nchunk)
+        return ".".join(netmask_chunks)
+
+    def _get_cache_data(self, names, iid=None, decode=True):
+        """Solves caching issues when working with multiple names
+        (lists not hashable).
+
+        This happens because the caching function used to store already
+        computed results inside a dictionary and the keys were strings
+        (and must be anything that is hashable under a dictionary, that's
+        why the exception is thrown).
+        """
+        names = names[:]
+        if iid is not None:
+            for ind, value in enumerate(names):
+                names[ind] = value.format(iid=iid)
+
+        for name in names:
+            try:
+                return self._service._get_cache_data(name, decode=decode)
+            except base.NotExistingMetadataException:
+                pass
+
+        msg = "None of {} metadata was found".format(", ".join(names))
+        LOG.debug(msg)
+        raise base.NotExistingMetadataException(msg)
+
+    def _digest_network(self, link, name):
+        """Try to find/predict and compute network configuration.
+
+        :raise: NotExistingMetadataException
+        """
+        networks = self._networks.setdefault(link[base.NAME], [])
+
+        address = self._get_cache_data(ADDRESS, iid=name)
+        try:
+            netmask = self._get_cache_data(NETMASK, iid=name)
+        except base.NotExistingMetadataException:
+            gateway = self._get_cache_data(GATEWAY, iid=name)
+            if not gateway:
+                LOG.debug("Incomplete NIC details for %s",
+                          IF_FORMAT.format(iid=name))
+                return
+            netmask = self._calculate_netmask(address, gateway)
+
+        network = self._digest_interface(address, netmask)
+        network[base.DNS] = self._get_cache_data(DNSNS, iid=name).split(" ")
+        network[base.GATEWAY] = gateway
+        networks.append(network)
+
+    def _digest(self):
+        """Digest the received network information."""
+        iid = 0
+        while True:
+            mac_address = self._service.content.get(MAC[0].format(iid=iid))
+            name = IF_FORMAT.format(iid=iid)
+            if not mac_address:
+                break
+
+            link = self._links.setdefault(name, {})
+            link[base.MAC_ADDRESS] = mac_address
+            link[base.NAME] = name
+            self._digest_network(link, iid)
+            iid += 1
+
+    def get_link(self, name):
+        """Return all the available information regarding the received
+        link name.
+
+        :rtype: dict
+        :raises: NotExistingMetadataException
+
+        .. notes:
+            The returned dictionary should contain al least the following
+            keys: `name` and `mac_address`.
+        """
+        return self._links.get(name)
+
+    def get_links(self):
+        """Return a list with the names of the available links.
+
+        :rtype: list
+        """
+        return self._links.keys()
+
+    def get_network(self, link, name):
+        """Return all the available information regarding the required
+        network.
+
+        :param link: The name of the required link
+        :type link:  str
+        :param name: The name of the required network
+        :type name: str
+
+        .. notes:
+            The returned dictionary should contain al least the following
+            keys: `name`, `type`, `ip_address`, `netmask` and
+            `dns_nameservers`.
+        """
+
+        return self._networks[link][name]
+
+    def get_networks(self, link):
+        """Returns all the network names bound by the required link.
+
+        :param link: The name of the required link
+        :type link:  str
+
+        :rtype: list
+        """
+        return range(0, len(self._networks[link]))
+
+
 class OpenNebulaService(base.BaseMetadataService):
 
     """Service handling ONE.
@@ -61,13 +197,10 @@ class OpenNebulaService(base.BaseMetadataService):
         self._raw_content = None
         self._dict_content = {}
 
-    def _nic_count(self):
-        """Return the number of available interfaces."""
-        mac = MAC[0]
-        iid = 0
-        while self._dict_content.get(mac.format(iid=iid)):
-            iid += 1
-        return iid
+    @property
+    def content(self):
+        """Expose the information from the config file."""
+        return self._dict_content
 
     @staticmethod
     def _parse_shell_variables(content):
@@ -95,34 +228,6 @@ class OpenNebulaService(base.BaseMetadataService):
                           int(match.group("int_value")))
         return pairs
 
-    @staticmethod
-    def _calculate_netmask(address, gateway):
-        """Try to determine a default netmask.
-
-        It is a simple, frequent and dummy prediction
-        based on the provided IP and gateway addresses.
-        """
-        address_chunks = address.split(".")
-        gateway_chunks = gateway.split(".")
-        netmask_chunks = []
-        for achunk, gchunk in six.moves.zip(
-                address_chunks, gateway_chunks):
-            if achunk == gchunk:
-                nchunk = "255"
-            else:
-                nchunk = "0"
-            netmask_chunks.append(nchunk)
-        return ".".join(netmask_chunks)
-
-    @staticmethod
-    def _compute_broadcast(address, netmask):
-        address_ulong, = struct.unpack("!L", socket.inet_aton(address))
-        netmask_ulong, = struct.unpack("!L", socket.inet_aton(netmask))
-        bitmask = 0xFFFFFFFF
-        broadcast_ulong = address_ulong | ~netmask_ulong & bitmask
-        broadcast = socket.inet_ntoa(struct.pack("!L", broadcast_ulong))
-        return broadcast
-
     def _parse_context(self):
         # Get the content if it's not already retrieved and parse it.
         if not self._raw_content:
@@ -145,28 +250,6 @@ class OpenNebulaService(base.BaseMetadataService):
             LOG.debug(msg)
             raise base.NotExistingMetadataException(msg)
         return self._dict_content[name]
-
-    def _get_cache_data(self, names, iid=None, decode=False):
-        # Solves caching issues when working with
-        # multiple names (lists not hashable).
-        # This happens because the caching function used
-        # to store already computed results inside a dictionary
-        # and the keys were strings (and must be anything that
-        # is hashable under a dictionary, that's why the exception
-        # is thrown).
-        names = names[:]
-        if iid is not None:
-            for ind, value in enumerate(names):
-                names[ind] = value.format(iid=iid)
-        for name in names:
-            try:
-                return super(OpenNebulaService, self)._get_cache_data(
-                    name, decode=decode)
-            except base.NotExistingMetadataException:
-                pass
-        msg = "None of {} metadata was found".format(", ".join(names))
-        LOG.debug(msg)
-        raise base.NotExistingMetadataException(msg)
 
     def load(self):
         """Loads the context metadata from the ISO provided by OpenNebula."""
@@ -201,52 +284,5 @@ class OpenNebulaService(base.BaseMetadataService):
     def get_public_keys(self):
         return self._get_cache_data(PUBLIC_KEY, decode=True).splitlines()
 
-    def get_network_details(self):
-        """Return a list of NetworkDetails objects.
-
-        With each object from that list, the corresponding
-        NIC (by mac) can be statically configured.
-        If no such object is present, then is believed that
-        this is handled by DHCP (user didn't provide sufficient data).
-        """
-        network_details = []
-        ncount = self._nic_count()
-        # for every interface
-        for iid in range(ncount):
-            try:
-                # get existing values
-                mac = self._get_cache_data(MAC, iid=iid, decode=True).upper()
-                address = self._get_cache_data(ADDRESS, iid=iid, decode=True)
-                # try to find/predict and compute the rest
-                try:
-                    gateway = self._get_cache_data(GATEWAY, iid=iid,
-                                                   decode=True)
-                except base.NotExistingMetadataException:
-                    gateway = None
-                try:
-                    netmask = self._get_cache_data(NETMASK, iid=iid,
-                                                   decode=True)
-                except base.NotExistingMetadataException:
-                    if not gateway:
-                        raise
-                    netmask = self._calculate_netmask(address, gateway)
-                broadcast = self._compute_broadcast(address, netmask)
-                # gather them as namedtuple objects
-                details = base.NetworkDetails(
-                    name=IF_FORMAT.format(iid=iid),
-                    mac=mac,
-                    address=address,
-                    address6=None,
-                    netmask=netmask,
-                    netmask6=None,
-                    broadcast=broadcast,
-                    gateway=gateway,
-                    gateway6=None,
-                    dnsnameservers=self._get_cache_data(
-                        DNSNS, iid=iid, decode=True).split(" ")
-                )
-            except base.NotExistingMetadataException:
-                LOG.debug("Incomplete NIC details")
-            else:
-                network_details.append(details)
-        return network_details
+    def get_network_adapter(self):
+        return OpenNebulaNetworkAdapter(self)
