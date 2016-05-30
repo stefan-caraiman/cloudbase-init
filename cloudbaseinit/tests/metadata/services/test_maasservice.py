@@ -20,12 +20,46 @@ except ImportError:
     import mock
 from oslo_config import cfg
 
+from cloudbaseinit import constants
 from cloudbaseinit.metadata.services import maasservice
 from cloudbaseinit.tests import testutils
 from cloudbaseinit.utils import x509constants
 
 
 CONF = cfg.CONF
+
+
+class Test_NetworkDetailsBuilder(unittest.TestCase):
+
+    @mock.patch("cloudbaseinit.osutils.factory.get_os_utils")
+    def setUp(self, _):
+        fake_network_data = {}
+        self._builder = maasservice._NetworkDetailsBuilder(
+            service=maasservice.MaaSHttpService,
+            network_data=fake_network_data)
+
+    @mock.patch("cloudbaseinit.metadata.services.basenetworkservice."
+                "NetworkDetailsBuilder._get_fields")
+    def _test_process_network(self, mock_get_fields, static=True):
+        mock_network = {}
+        mock_raw_subnet = {mock.sentinel.key: mock.sentinel.subnet}
+        if static:
+            mock_network[constants.ID] = mock.sentinel.id
+            mock_network[constants.TYPE] = self._builder.STATIC
+            mock_get_fields.return_value = mock_network
+            res = self._builder._process_network(mock_raw_subnet)
+            self.assertTrue(res)
+        else:
+            mock_network[constants.TYPE] = self._builder.MANUAL
+            mock_get_fields.return_value = mock_network
+            res = self._builder._process_network(mock_raw_subnet)
+            self.assertFalse(res)
+
+    def test_process_network_static(self):
+        self._test_process_network()
+
+    def test_process_network_manual(self):
+        self._test_process_network(static=False)
 
 
 class MaaSHttpServiceTest(unittest.TestCase):
@@ -150,3 +184,40 @@ class MaaSHttpServiceTest(unittest.TestCase):
             '%s/user-data' %
             self._maasservice._metadata_version)
         self.assertEqual(mock_get_cache_data.return_value, response)
+
+    @mock.patch("cloudbaseinit.metadata.services.maasservice.MaaSHttpService"
+                "._get_cache_data")
+    def test_get_network_details_builder_no_data(self, mock_get_cache_data):
+        mock_get_cache_data.return_value = None
+        expected_output = ["'network_data.json' not found."]
+        with testutils.LogSnatcher('cloudbaseinit.metadata.services.'
+                                   'maasservice') as snatcher:
+            response = self._maasservice._get_network_details_builder()
+        mock_get_cache_data.assert_called_once_with('latest/network_data.json',
+                                                    decode=True)
+        self.assertIsNone(response)
+        self.assertEqual(snatcher.output, expected_output)
+
+    @mock.patch('json.loads')
+    @mock.patch("cloudbaseinit.metadata.services.maasservice.MaaSHttpService"
+                "._get_cache_data")
+    def test_get_network_details_builder_fail_json(self, mock_get_cache_data,
+                                                   mock_loads):
+        mock_loads.side_effect = ValueError
+        expected_output = ['Failed to load json data: ValueError()']
+        with testutils.LogSnatcher('cloudbaseinit.metadata.services.'
+                                   'maasservice') as snatcher:
+            response = self._maasservice._get_network_details_builder()
+        mock_get_cache_data.assert_called_once_with('latest/network_data.json',
+                                                    decode=True)
+        self.assertIsNone(response)
+        self.assertEqual(snatcher.output, expected_output)
+
+    @mock.patch("cloudbaseinit.osutils.factory.get_os_utils")
+    @mock.patch('json.loads')
+    @mock.patch("cloudbaseinit.metadata.services.maasservice.MaaSHttpService"
+                "._get_cache_data")
+    def test_get_network_details(self, mock_get_cache_data, mock_loads,
+                                 mock_get_os_utils):
+        response = self._maasservice._get_network_details_builder()
+        self.assertIsInstance(response, maasservice._NetworkDetailsBuilder)

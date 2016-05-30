@@ -17,8 +17,13 @@ import re
 from oauthlib import oauth1
 from oslo_config import cfg
 from oslo_log import log as oslo_logging
+try:
+    import simplejson as json
+except ImportError:
+    import json
 
-from cloudbaseinit.metadata.services import base
+from cloudbaseinit import constants
+from cloudbaseinit.metadata.services import basenetworkservice as service_base
 from cloudbaseinit.utils import x509constants
 
 MAAS_OPTS = [
@@ -57,6 +62,60 @@ CONF.register_opts(MAAS_OPTS, "maas")
 LOG = oslo_logging.getLogger(__name__)
 
 
+class _NetworkDetailsBuilder(service_base.NetworkDetailsBuilder):
+
+    """MAAS HTTP service network details builders."""
+
+    _CONFIG = "config"
+    _SUBNETS = "subnets"
+
+    # Network types
+    STATIC = "static"
+    MANUAL = "manual"
+
+    def __init__(self, service, network_data):
+        super(_NetworkDetailsBuilder, self).__init__(service)
+        self._link.update({
+            constants.TYPE: self._Field(name=constants.TYPE),
+            constants.ID: self._Field(name=constants.ID),
+            constants.MTU: self._Field(name=constants.MTU),
+        })
+        self._network.update({
+            constants.DNS: self._Field(name=constants.DNS),
+            constants.IP_ADDRESS: self._Field(name=constants.IP_ADDRESS),
+            constants.NETMASK: self._Field(name=constants.NETMASK),
+        })
+
+        self._links = {}
+        self._networks = {}
+        self._network_data = network_data
+
+    def _process_network(self, raw_subnets):
+        """Digest the information related to networks."""
+        success = False
+        for raw_network in raw_subnets:
+            network = self._get_fields(self._network.values(),
+                                       raw_network)
+            if network and network[constants.TYPE] == self.STATIC:
+                self._networks[network[constants.ID]] = network
+                success = True
+        return success
+
+    def _process(self):
+        """Digest the received network information."""
+        for raw_link in self._network_data.get(self._CONFIG, []):
+            link = self._get_fields(self._link.values(), raw_link)
+            if link and self._SUBNETS in raw_link:
+                if self._process_network(raw_link.get(self._SUBNETS)):
+                    self._links[link[constants.ID]] = link
+            else:
+                # Note(alexandrucoman): The current raw_link do not contain
+                #                       all the required fields.
+                LOG.warning("%r does not contain all the required fields.",
+                            raw_link)
+                continue
+
+
 class _Realm(str):
     # There's a bug in oauthlib which ignores empty realm strings,
     # by checking that the given realm is always True.
@@ -68,7 +127,8 @@ class _Realm(str):
     __nonzero__ = __bool__
 
 
-class MaaSHttpService(base.BaseHTTPMetadataService):
+class MaaSHttpService(service_base.BaseHTTPNetworkMetadataService):
+
     _METADATA_2012_03_01 = '2012-03-01'
 
     def __init__(self):
@@ -135,3 +195,24 @@ class MaaSHttpService(base.BaseHTTPMetadataService):
 
     def get_user_data(self):
         return self._get_cache_data('%s/user-data' % self._metadata_version)
+
+    def _get_network_details_builder(self):
+        """Get the required `NetworkDetailsBuilder` object.
+
+        The `NetworkDetailsBuilder` is used in order to create the
+        `NetworkDetails` object using the network related information
+        exposed by the current metadata provider.
+        """
+        network_data = self._get_cache_data('latest/network_data.json',
+                                            decode=True)
+        if not network_data:
+            LOG.debug("'network_data.json' not found.")
+            return None
+
+        try:
+            network_data = json.loads(network_data)
+        except ValueError as exc:
+            LOG.error("Failed to load json data: %r" % exc)
+            return None
+
+        return _NetworkDetailsBuilder(self, network_data)
