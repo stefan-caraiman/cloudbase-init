@@ -20,6 +20,10 @@ from oslo_config import cfg
 from oslo_log import log as oslo_logging
 from six.moves.urllib import error
 from six.moves.urllib import request
+try:
+    import simplejson as json
+except ImportError:
+    import json
 
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.utils import x509constants
@@ -41,6 +45,108 @@ CONF = cfg.CONF
 CONF.register_opts(opts)
 
 LOG = oslo_logging.getLogger(__name__)
+
+
+class _MaaSNetworkAdapter(base.BaseNetworkAdapter):
+
+    """MaaS HTTP Service Network Adapter."""
+
+    _CONFIG = "config"
+    _SUBNETS = "subnets"
+
+    FIELDS = {
+        base.LINK: {
+            base.TYPE: base.Field(name=base.TYPE, required=True),
+            base.ID: base.Field(name=base.ID, required=True),
+            base.MTU: base.Field(name=base.MTU, required=True),
+        },
+        base.NETWORK: {
+            base.TYPE: base.Field(name=base.TYPE, required=True),
+            base.DNS: base.Field(name=base.DNS, required=False),
+            base.IP_ADDRESS: base.Field(name=base.IP_ADDRESS, required=False),
+            base.NETMASK: base.Field(name=base.NETMASK, required=False),
+        },
+    }
+
+    # Network types
+    STATIC = "static"
+    MANUAL = "manual"
+
+    def __init__(self, service, network_data):
+        super(_MaaSNetworkAdapter, self).__init__(service)
+        self._links = {}
+        self._networks = {}
+
+        self._digest(network_data)
+
+    def _digest_network(self, link, raw_subnets):
+        """Digest the information related to networks."""
+        networks = self._networks.setdefault(link[base.NAME], [])
+        for raw_network in raw_subnets:
+            network = self.get_fields(self.fields[base.NETWORK],
+                                      raw_network)
+            if network and network[base.TYPE] == self.STATIC:
+                interface = self._digest_interface(network[base.IP_ADDRESS],
+                                                   network[base.NETMASK])
+                network.update(interface)
+                networks.append(network)
+
+    def _digest(self, network_data):
+        """Digest the received network information."""
+        for raw_link in network_data.get(self._CONFIG, []):
+            try:
+                link = self.get_fields(self.fields[base.LINK], raw_link)
+                self._links[link[base.NAME]] = link
+                self._digest_network(link, raw_link.get(self._SUBNETS, []))
+            except TypeError:
+                # Note(alexandrucoman): The current raw_link do not contain
+                #                       all the required fields.
+                continue
+
+    def get_link(self, name):
+        """Return all the available information regarding the received
+        link name.
+
+        :rtype: dict
+
+        .. notes:
+            The returned dictionary should contain al least the following
+            keys: `name` and `mac_address`.
+        """
+        return self._links[name]
+
+    def get_links(self):
+        """Return a list with the names of the available links.
+
+        :rtype: list
+        """
+        return self._links.keys()
+
+    def get_network(self, link, name):
+        """Return all the available information regarding the required
+        network.
+
+        :param link: The name of the required link
+        :type link:  str
+        :param name: The name of the required network
+        :type name: str
+
+        .. notes:
+            The returned dictionary should contain al least the following
+            keys: `name`, `type`, `ip_address`, `netmask` and
+            `dns_nameservers`.
+        """
+        return self._networks[link][name]
+
+    def get_networks(self, link):
+        """Returns all the network names bound by the required link.
+
+        :param link: The name of the required link
+        :type link:  str
+
+        :rtype: list
+        """
+        return range(0, len(self._networks[link]))
 
 
 class _Realm(str):
@@ -131,3 +237,15 @@ class MaaSHttpService(base.BaseMetadataService):
 
     def get_user_data(self):
         return self._get_cache_data('%s/user-data' % self._metadata_version)
+
+    def get_network_adapter(self):
+        network_data = self._get_cache_data('latest/network_data.json')
+        if not network_data:
+            return None
+
+        try:
+            network_data = json.loads(network_data)
+        except ValueError:
+            return None
+
+        return _MaaSNetworkAdapter(self, network_data)
