@@ -37,7 +37,7 @@ class SetUserPasswordPlugin(base.BasePlugin):
         return base64.b64encode(enc_password)
 
     def _get_ssh_public_key(self, service):
-        public_keys = service.get_public_keys()
+        public_keys = service.get_encryption_public_key()
         if public_keys:
             return list(public_keys)[0]
 
