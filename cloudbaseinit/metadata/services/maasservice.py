@@ -12,14 +12,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import posixpath
 import re
 
 from oauthlib import oauth1
 from oslo_config import cfg
 from oslo_log import log as oslo_logging
-from six.moves.urllib import error
-from six.moves.urllib import request
 
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.utils import x509constants
@@ -45,6 +42,12 @@ MAAS_OPTS = [
                help="The MaaS OAuth token secret",
                deprecated_name="maas_oauth_token_secret",
                deprecated_group="DEFAULT"),
+    cfg.BoolOpt("https_allow_insecure", default=False,
+                help="Whether to disable the validation of HTTPS "
+                "certificates."),
+    cfg.StrOpt("https_ca_bundle", default=None,
+               help="The path to a CA_BUNDLE file or directory with "
+                    "certificates of trusted CAs."),
 ]
 
 CONF = cfg.CONF
@@ -65,11 +68,14 @@ class _Realm(str):
     __nonzero__ = __bool__
 
 
-class MaaSHttpService(base.BaseMetadataService):
+class MaaSHttpService(base.BaseHTTPMetadataService):
     _METADATA_2012_03_01 = '2012-03-01'
 
     def __init__(self):
-        super(MaaSHttpService, self).__init__()
+        super(MaaSHttpService, self).__init__(
+            base_url=CONF.maas.metadata_base_url,
+            https_allow_insecure=CONF.maas.https_allow_insecure,
+            https_ca_bundle=CONF.maas.https_ca_bundle)
         self._enable_retry = True
         self._metadata_version = self._METADATA_2012_03_01
 
@@ -88,15 +94,6 @@ class MaaSHttpService(base.BaseMetadataService):
                           CONF.maas.metadata_base_url)
         return False
 
-    def _get_response(self, req):
-        try:
-            return request.urlopen(req)
-        except error.HTTPError as ex:
-            if ex.code == 404:
-                raise base.NotExistingMetadataException()
-            else:
-                raise
-
     def _get_oauth_headers(self, url):
         client = oauth1.Client(
             CONF.maas.oauth_consumer_key,
@@ -108,15 +105,11 @@ class MaaSHttpService(base.BaseMetadataService):
         headers = client.sign(url, realm=realm)[1]
         return headers
 
-    def _get_data(self, path):
-        norm_path = posixpath.join(CONF.maas.metadata_base_url, path)
-        oauth_headers = self._get_oauth_headers(norm_path)
-
-        LOG.debug('Getting metadata from: %(norm_path)s',
-                  {'norm_path': norm_path})
-        req = request.Request(norm_path, headers=oauth_headers)
-        response = self._get_response(req)
-        return response.read()
+    def _http_request(self, url, data=None, headers=None):
+        """Get content for received url."""
+        if headers is None:
+            headers = self._get_oauth_headers(url)
+        super(MaaSHttpService, self)._http_request(url, data, headers)
 
     def get_host_name(self):
         return self._get_cache_data('%s/meta-data/local-hostname' %
