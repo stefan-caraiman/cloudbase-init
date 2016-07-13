@@ -113,12 +113,26 @@ check_latest_version=true
 # Add a route for the metadata ip address to the gateway.
 # add_metadata_private_ip_route=true
 
+# Whether to disable the validation of HTTPS certificates.
+# https_allow_insecure=false
+
+# The path to a CA_BUNDLE file or directory with certificates
+# of trusted CAs.
+# https_ca_bundle=
+
 [ec2]
 # The base URL where the service looks for metadata
 # metadata_base_url=http://169.254.169.254/
 
 # Add a route for the metadata ip address to the gateway.
 # add_metadata_private_ip_route=true
+
+# Whether to disable the validation of HTTPS certificates.
+# https_allow_insecure=false
+
+# The path to a CA_BUNDLE file or directory with certificates
+# of trusted CAs.
+# https_ca_bundle=
 
 [maas]
 # The base URL for MaaS metadata.
@@ -131,7 +145,14 @@ check_latest_version=true
 # oauth_consumer_secret=
 
 # The MaaS OAuth token key
-oauth_token_key=
+# oauth_token_key=
 
 # The MaaS OAuth token secret
-oauth_token_secret=
+# oauth_token_secret=
+
+# Whether to disable the validation of HTTPS certificates.
+# https_allow_insecure=false
+
+# The path to a CA_BUNDLE file or directory with certificates
+# of trusted CAs.
+# https_ca_bundle=

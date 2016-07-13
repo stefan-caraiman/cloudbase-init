@@ -12,15 +12,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import posixpath
-
 from oslo_config import cfg
 from oslo_log import log as oslo_logging
 from six.moves.urllib import error
-from six.moves.urllib import request
 
 from cloudbaseinit.metadata.services import base
-from cloudbaseinit.metadata.services import baseopenstackservice
+from cloudbaseinit.metadata.services import baseopenstackservice as baseos
 from cloudbaseinit.utils import network
 
 OPENSTACK_OPTS = [
@@ -30,6 +27,12 @@ OPENSTACK_OPTS = [
     cfg.BoolOpt("add_metadata_private_ip_route", default=True,
                 help="Add a route for the metadata ip address to the gateway",
                 deprecated_group="DEFAULT"),
+    cfg.BoolOpt("https_allow_insecure", default=False,
+                help="Whether to disable the validation of HTTPS "
+                     "certificates."),
+    cfg.StrOpt("https_ca_bundle", default=None,
+               help="The path to a CA_BUNDLE file or directory with "
+                    "certificates of trusted CAs."),
 ]
 
 CONF = cfg.CONF
@@ -38,11 +41,14 @@ CONF.register_opts(OPENSTACK_OPTS, "openstack")
 LOG = oslo_logging.getLogger(__name__)
 
 
-class HttpService(baseopenstackservice.BaseOpenStackService):
+class HttpService(base.BaseHTTPMetadataService, baseos.BaseOpenStackService):
     _POST_PASSWORD_MD_VER = '2013-04-04'
 
     def __init__(self):
-        super(HttpService, self).__init__()
+        super(HttpService, self).__init__(
+            base_url=CONF.openstack.metadata_base_url,
+            https_allow_insecure=CONF.openstack.https_allow_insecure,
+            https_ca_bundle=CONF.openstack.https_ca_bundle)
         self._enable_retry = True
 
     def load(self):
@@ -58,28 +64,8 @@ class HttpService(baseopenstackservice.BaseOpenStackService):
                       CONF.openstack.metadata_base_url)
             return False
 
-    def _get_response(self, req):
-        try:
-            return request.urlopen(req)
-        except error.HTTPError as ex:
-            if ex.code == 404:
-                raise base.NotExistingMetadataException()
-            else:
-                raise
-
-    def _get_data(self, path):
-        norm_path = posixpath.join(CONF.openstack.metadata_base_url, path)
-        LOG.debug('Getting metadata from: %s', norm_path)
-        req = request.Request(norm_path)
-        response = self._get_response(req)
-        return response.read()
-
     def _post_data(self, path, data):
-        norm_path = posixpath.join(CONF.openstack.metadata_base_url, path)
-        LOG.debug('Posting metadata to: %s', norm_path)
-        req = request.Request(norm_path, data=data)
-        self._get_response(req)
-        return True
+        return True if self._http_request(path, data=data) else return False
 
     def _get_password_path(self):
         return 'openstack/%s/password' % self._POST_PASSWORD_MD_VER
