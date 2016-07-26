@@ -18,11 +18,30 @@ import re
 from oslo_log import log as oslo_logging
 
 from cloudbaseinit import conf as cloudbaseinit_conf
+from cloudbaseinit import exception
 
 CONF = cloudbaseinit_conf.CONF
 LOG = oslo_logging.getLogger(__name__)
 
 NETBIOS_HOST_NAME_MAX_LEN = 15
+
+
+def check_can_set_hostname(osutils):
+    """Determine if the hostname can be set or not.
+
+    Information about this can be found at the following link:
+    https://msdn.microsoft.com/en-us/library/windows/hardware/dn922649(v=vs.85).aspx
+    """
+    if osutils.check_os_version(10, 0):
+        unattended = osutils.is_in_unattended()
+        if not unattended:
+            return True
+        else:
+            raise exception.WindowsCloudbaseInitException(
+                "The hostname can not be set in the unattended"
+                " phase for this version of Windows.")
+    else:
+        return True
 
 
 def set_hostname(osutils, hostname):
@@ -42,6 +61,8 @@ def set_hostname(osutils, hostname):
             required, False otherwise.
 
     """
+    check_can_set_hostname(osutils)
+
     hostname = hostname.split('.', 1)[0]
     if (len(hostname) > NETBIOS_HOST_NAME_MAX_LEN and
             CONF.netbios_host_name_compatibility):

@@ -20,6 +20,7 @@ except ImportError:
     import mock
 
 from cloudbaseinit import conf as cloudbaseinit_conf
+from cloudbaseinit import exception
 from cloudbaseinit.tests import testutils
 from cloudbaseinit.utils import hostname
 
@@ -32,9 +33,17 @@ class HostnameUtilsTest(unittest.TestCase):
     @mock.patch('platform.node')
     def _test_set_hostname(self, mock_node, new_hostname='hostname',
                            expected_new_hostname='hostname',
-                           hostname_already_set=False):
+                           hostname_already_set=False,
+                           is_in_unattended=False):
         mock_osutils = mock.MagicMock()
         mock_osutils.set_host_name.return_value = True
+        mock_osutils.is_in_unattended.return_value = is_in_unattended
+
+        if is_in_unattended:
+            self.assertRaises(exception.WindowsCloudbaseInitException,
+                              hostname.set_hostname, mock_osutils,
+                              new_hostname)
+            return
 
         if hostname_already_set:
             mock_node.return_value = expected_new_hostname
@@ -85,3 +94,6 @@ class HostnameUtilsTest(unittest.TestCase):
             hostname.NETBIOS_HOST_NAME_MAX_LEN - 1) + '0'
         self._test_set_hostname(new_hostname=new_hostname,
                                 expected_new_hostname=expected_new_hostname)
+
+    def test_cannot_be_set(self):
+        self._test_set_hostname(is_in_unattended=True)

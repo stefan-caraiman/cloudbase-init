@@ -47,6 +47,7 @@ AF_INET6 = 23
 UNICAST = 1
 MANUAL = 1
 PREFERRED_ADDR = 4
+IMAGE_STATE_COMPLETE = 'IMAGE_STATE_COMPLETE'
 
 advapi32 = ctypes.windll.advapi32
 kernel32 = ctypes.windll.kernel32
@@ -1186,3 +1187,18 @@ class WindowsUtils(base.BaseOSUtils):
             raise exception.CloudbaseInitException(
                 "The given timezone name is unrecognised: %r" % timezone_name)
         timezone.Timezone(windows_name).set(self)
+
+    def is_in_unattended(self):
+        """Check if Windows is in the unattended phase."""
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 'SOFTWARE\\'
+                                'Microsoft\\Windows\\CurrentVersion\\'
+                                'Setup\\State', 0, winreg.KEY_READ) as key:
+                gen_state = winreg.QueryValueEx(key, 'ImageState')[0]
+        except WindowsError as exc:
+            raise exception.WindowsCloudbaseInitException(
+                "Could not determine the setup state: %s" % exc)
+
+        if gen_state == IMAGE_STATE_COMPLETE:
+            return False
+        return True
