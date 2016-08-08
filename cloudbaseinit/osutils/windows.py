@@ -534,6 +534,45 @@ class WindowsUtils(base.BaseOSUtils):
                     'value "%(mtu)s" failed' % {'mac_address': mac_address,
                                                 'mtu': mtu})
 
+    def create_nic_bonding(self, bond_interfaces):
+        if self.is_nano_server():
+            return
+        conn = wmi.WMI(moniker='//./root/StandardCimv2')
+        bond_name = bond_interfaces["id"]
+        bond_members = bond_interfaces["bond_links"]
+        lb_algo = {"layer2": "MacAddresses", "layer2+3": "IPAddresses",
+                   "layer3+4": "TransportPorts"}
+        # Set the load balancing algorithm
+        if bond_interfaces["bond_xmit_hash_policy"] in lb_algo:
+            algorithm = lb_algo[bond_interfaces["bond_xmit_hash_policy"]]
+        else:
+            # Default load balancing algorithm
+            algorithm = "Dynamic"
+        # Set teaming mode
+        if bond_interfaces["bond_mode"] == "802.3ad":
+            teaming_mode = "Lacp"
+        else:
+            teaming_mode = "SwitchIndependent"
+        team_params = {
+            "Name": bond_name,
+            "LoadBalancingAlgorithm": algorithm,
+            "TeamingMode": teaming_mode
+        }
+        # Create the new Lbfo Team
+        lbfo_team = conn.new("MSFT_NetLbfoTeam", **team_params)
+
+    def rename_bond(self, current_name, new_name):
+        conn = wmi.WMI(moniker='//./root/StandardCimv2')
+        query = conn.query("SELECT * FROM MSFT_NetLbfoTeam WHERE "
+                           "NAME='{}'".format(current_name))
+        bond_team = query[0]
+        try:
+            bond_team.Rename(Name=bond_team.Name, NewName=new_name)
+        except Exception:
+            # The Rename function will throw an error
+            # that the Name property doesn't exist, but will change it
+            pass
+
     def set_static_network_config(self, mac_address, address, netmask,
                                   broadcast, gateway, dnsnameservers):
         conn = wmi.WMI(moniker='//./root/cimv2')
