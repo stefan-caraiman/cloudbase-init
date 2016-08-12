@@ -22,9 +22,36 @@ except ImportError:
 from oslo_config import cfg
 from six.moves.urllib import error
 
+from cloudbaseinit.metadata.services import base
 from cloudbaseinit.metadata.services import httpservice
+from cloudbaseinit.tests.metadata import fake_json_response
+from cloudbaseinit.tests import testutils
 
 CONF = cfg.CONF
+
+
+class Test_NetworkDetailsBuilder(unittest.TestCase):
+
+    @mock.patch("cloudbaseinit.osutils.factory.get_os_utils")
+    def setUp(self, _):
+        self._http_details_builder = httpservice._NetworkDetailsBuilder(
+            service=httpservice.HttpService,
+            network_data=fake_json_response.get_openstack_json_sample())
+
+    def test_process_raw_networks(self):
+        self._http_details_builder._process_raw_networks()
+
+    def test_process_raw_networks_no_data(self):
+        self._http_details_builder._network_data = {}
+        output = ["No information regarding networks available."]
+        with testutils.LogSnatcher('cloudbaseinit.metadata.services.'
+                                   'httpservice') as snatcher:
+            res = self._http_details_builder._process_raw_networks()
+        self.assertEqual(snatcher.output, output)
+        self.assertIsNone(res)
+
+    def test_process(self):
+        self._http_details_builder._process()
 
 
 class HttpServiceTest(unittest.TestCase):
@@ -104,3 +131,37 @@ class HttpServiceTest(unittest.TestCase):
         err = error.HTTPError("http://169.254.169.254/", 404,
                               'test error 404', {}, None)
         self._test_post_password(ret_val=err)
+
+    @mock.patch('json.loads')
+    @mock.patch('cloudbaseinit.metadata.services.base.BaseHTTPMetadataService'
+                '._get_data')
+    def _test_get_network_details_builder(self, mock_get_data, mock_json_load,
+                                          exception_type=None):
+        if exception_type:
+            if exception_type is base.NotExistingMetadataException:
+                expected_output = ["JSON network metadata not found."]
+                mock_get_data.side_effect = exception_type
+            else:
+                expected_output = ["Failed to load json data: ValueError()"]
+                mock_json_load.side_effect = exception_type
+            with testutils.LogSnatcher('cloudbaseinit.metadata.services.'
+                                       'httpservice') as snatcher:
+                self.assertRaises(exception_type,
+                                  (self._httpservice.
+                                   _get_network_details_builder))
+            self.assertEqual(snatcher.output, expected_output)
+            return
+        else:
+            res = self._httpservice._get_network_details_builder()
+            self.assertIsInstance(res, httpservice._NetworkDetailsBuilder)
+
+    def test_get_network_details_no_metadata(self):
+        exc = base.NotExistingMetadataException
+        self._test_get_network_details_builder(exception_type=exc)
+
+    def test_get_network_details_failed_json(self):
+        exc = ValueError
+        self._test_get_network_details_builder(exception_type=exc)
+
+    def test_get_network_details(self):
+        self._test_get_network_details_builder()
