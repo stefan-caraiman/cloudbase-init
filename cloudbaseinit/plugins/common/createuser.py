@@ -14,68 +14,59 @@
 
 import abc
 
-from oslo_log import log as oslo_logging
-import six
-
 from cloudbaseinit import conf as cloudbaseinit_conf
 from cloudbaseinit.osutils import factory as osutils_factory
 from cloudbaseinit.plugins.common import base
 from cloudbaseinit.plugins.common import constants
+from cloudbaseinit.plugins.common import usermanagement
+
 
 CONF = cloudbaseinit_conf.CONF
-LOG = oslo_logging.getLogger(__name__)
 
 
-@six.add_metaclass(abc.ABCMeta)
-class BaseCreateUserPlugin(base.BasePlugin):
-    """This is a base class for creating or modifying an user."""
+class UserManager(usermanagement.BaseUserManager):
 
-    @abc.abstractmethod
-    def create_user(self, username, password, osutils):
-        """Create a new username, with the given *username*.
+    def _get_username(self, data):
+        """Get the username from the config file.
 
-        This will be called by :meth:`~execute`, whenever
-        a new user must be created.
+        Gets the username and also sets the username in the
+        shared data.
         """
+        user_name = CONF.username
+        data[constants.SHARED_DATA_USERNAME] = user_name
+        return user_name
 
-    @abc.abstractmethod
-    def post_create_user(self, user_name, password, osutils):
-        """Executes post user creation logic.
+    def _get_groups(self, data):
+        """Get the group names from the config file."""
+        return CONF.groups
 
-        This will be called after by :meth:`~execute`, after
-        the user is created or the user password is updated.
-        """
+    def _get_expire_status(self, data):
+        """Get the password expiration status."""
+        return False
 
-    @staticmethod
-    def _get_password(osutils):
+    def _get_user_activity(self, data):
+        """Get the user activity type for whether to create a logon session."""
+        return False
+
+    def _get_password(self, data):
+        """Get a random password and sets in the shared data."""
         # Generate a temporary random password to be replaced
         # by SetUserPasswordPlugin (starting from Grizzly)
+        osutils = osutils_factory.get_os_utils()
         maximum_length = osutils.get_maximum_password_length()
-        return osutils.generate_random_password(maximum_length)
+        password = osutils.generate_random_password(maximum_length)
+        # TODO(alexpilotti): encrypt with DPAPI
+        data[constants.SHARED_DATA_PASSWORD] = password
+        return password
+
+
+class BaseCreateUserPlugin(base.BasePlugin):
+    """This is the base class for creating or modifying an user."""
+
+    @abc.abstractmethod
+    def _handle_user(self, service, shared_data):
+        pass
 
     def execute(self, service, shared_data):
-        user_name = CONF.username
-        shared_data[constants.SHARED_DATA_USERNAME] = user_name
-
-        osutils = osutils_factory.get_os_utils()
-        password = self._get_password(osutils)
-
-        if osutils.user_exists(user_name):
-            LOG.info('Setting password for existing user "%s"', user_name)
-            osutils.set_user_password(user_name, password)
-        else:
-            LOG.info('Creating user "%s" and setting password', user_name)
-            self.create_user(user_name, password, osutils)
-
-            # TODO(alexpilotti): encrypt with DPAPI
-            shared_data[constants.SHARED_DATA_PASSWORD] = password
-
-        self.post_create_user(user_name, password, osutils)
-
-        for group_name in CONF.groups:
-            try:
-                osutils.add_user_to_local_group(user_name, group_name)
-            except Exception:
-                LOG.exception('Cannot add user to group "%s"', group_name)
-
+        self._handle_user(service, shared_data)
         return base.PLUGIN_EXECUTION_DONE, False

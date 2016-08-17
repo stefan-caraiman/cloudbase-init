@@ -21,92 +21,62 @@ except ImportError:
 
 from cloudbaseinit import conf as cloudbaseinit_conf
 from cloudbaseinit.plugins.common import base
+from cloudbaseinit.plugins.common import constants
 from cloudbaseinit.plugins.common import createuser
 from cloudbaseinit.tests import testutils
 
 CONF = cloudbaseinit_conf.CONF
 
 
-class CreateUserPlugin(createuser.BaseCreateUserPlugin):
+class UserManagerTest(unittest.TestCase):
 
-    def create_user(self, username, password, osutils):
-        pass
+    def setUp(self):
+        self.user_manager = createuser.UserManager()
 
-    def post_create_user(self, username, password, osutils):
-        pass
+    @testutils.ConfPatcher('username', 'fake_username')
+    def test_get_username(self):
+        fake_data = {constants.SHARED_DATA_USERNAME: None}
+        result = self.user_manager._get_username(fake_data)
+        self.assertEqual('fake_username', result)
+        self.assertEqual(fake_data[constants.SHARED_DATA_USERNAME], result)
+
+    @testutils.ConfPatcher('groups', ['Group 1', 'Group 2'])
+    def test_get_groups(self):
+        expected_groups = ['Group 1', 'Group 2']
+        result = self.user_manager._get_groups({})
+        self.assertEqual(result, expected_groups)
+
+    def test_get_expire_status(self):
+        result = self.user_manager._get_expire_status(None)
+        self.assertEqual(False, result)
+
+    def test_get_user_activity(self):
+        result = self.user_manager._get_user_activity(None)
+        self.assertEqual(False, result)
+
+    @mock.patch('cloudbaseinit.osutils.factory.get_os_utils')
+    def test_get_password(self, mock_get_os_utils):
+        mock_utils = mock.Mock()
+        expected_password = "fake_password"
+        fake_shared_data = {constants.SHARED_DATA_PASSWORD: "fake"}
+        mock_utils.get_maximum_password_length.return_value = mock.sentinel.len
+        mock_utils.generate_random_password.return_value = expected_password
+        mock_get_os_utils.return_value = mock_utils
+        result = self.user_manager._get_password(fake_shared_data)
+        self.assertEqual(expected_password, result)
+        self.assertEqual(mock_utils.get_maximum_password_length.call_count, 1)
+        self.assertEqual(mock_utils.generate_random_password.call_count, 1)
+        self.assertEqual(expected_password, fake_shared_data[
+                         constants.SHARED_DATA_PASSWORD])
 
 
 class CreateUserPluginTests(unittest.TestCase):
 
     def setUp(self):
-        self._create_user = CreateUserPlugin()
+        self._create_user = createuser.BaseCreateUserPlugin()
 
-    def test_get_password(self):
-        mock_osutils = mock.MagicMock()
-        mock_osutils.generate_random_password.return_value = 'fake password'
-        response = self._create_user._get_password(mock_osutils)
-        mock_osutils.get_maximum_password_length.assert_called_once_with()
-        length = mock_osutils.get_maximum_password_length()
-        mock_osutils.generate_random_password.assert_called_once_with(length)
-        self.assertEqual('fake password', response)
-
-    @testutils.ConfPatcher('groups', ['Admins'])
-    @mock.patch('cloudbaseinit.osutils.factory.get_os_utils')
-    @mock.patch('cloudbaseinit.plugins.common.createuser.'
-                'BaseCreateUserPlugin._get_password')
-    @mock.patch.object(CreateUserPlugin, 'create_user')
-    @mock.patch.object(CreateUserPlugin, 'post_create_user')
-    def _test_execute(self, mock_post_create_user, mock_create_user,
-                      mock_get_password, mock_get_os_utils,
-                      user_exists=True,
-                      group_adding_works=True):
-        shared_data = {}
-        mock_osutils = mock.MagicMock()
-        mock_service = mock.MagicMock()
-        mock_get_password.return_value = 'password'
-        mock_get_os_utils.return_value = mock_osutils
-        mock_osutils.user_exists.return_value = user_exists
-        if not group_adding_works:
-            mock_osutils.add_user_to_local_group.side_effect = Exception
-
-        with testutils.LogSnatcher("cloudbaseinit.plugins.common."
-                                   "createuser") as snatcher:
-            response = self._create_user.execute(mock_service, shared_data)
-
-        mock_get_os_utils.assert_called_once_with()
-        mock_get_password.assert_called_once_with(mock_osutils)
-        mock_osutils.user_exists.assert_called_once_with(CONF.username)
-        if user_exists:
-            mock_osutils.set_user_password.assert_called_once_with(
-                CONF.username, 'password')
-            expected_logging = ["Setting password for existing user \"%s\""
-                                % CONF.username]
-        else:
-            mock_create_user.assert_called_once_with(
-                CONF.username, 'password',
-                mock_osutils)
-            expected_logging = ["Creating user \"%s\" and setting password"
-                                % CONF.username]
-
-        mock_post_create_user.assert_called_once_with(
-            CONF.username, 'password',
-            mock_osutils)
-
-        self.assertEqual(expected_logging, snatcher.output[:1])
-        if not group_adding_works:
-            failed = snatcher.output[1].startswith(
-                "Cannot add user to group \"Admins\"")
-            self.assertTrue(failed)
-
-        mock_osutils.add_user_to_local_group.assert_called_once_with(
-            CONF.username, CONF.groups[0])
+    def test_execute(self):
+        fake_service = "fake_service"
+        fake_shared_data = "fake_shared_data"
+        response = self._create_user.execute(fake_service, fake_shared_data)
         self.assertEqual((base.PLUGIN_EXECUTION_DONE, False), response)
-
-    def test_execute_user_exists(self):
-        self._test_execute(user_exists=True)
-
-    def test_execute_no_user(self):
-        self._test_execute(user_exists=False)
-
-    def test_execute_add_to_group_fails(self):
-        self._test_execute(group_adding_works=False)

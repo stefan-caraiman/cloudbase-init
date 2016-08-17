@@ -26,27 +26,16 @@ from cloudbaseinit.tests import testutils
 class CreateUserPluginTests(unittest.TestCase):
 
     def setUp(self):
-        self._create_user = createuser.CreateUserPlugin()
+        self._create_user = createuser.CreateUserManager()
 
-    def test_create_user(self):
-        mock_osutils = mock.Mock()
-        self._create_user.create_user(
-            mock.sentinel.username,
-            mock.sentinel.password,
-            mock_osutils)
-
-        mock_osutils.create_user.assert_called_once_with(
-            mock.sentinel.username,
-            mock.sentinel.password)
-
-    @mock.patch('cloudbaseinit.plugins.windows.createuser.CreateUserPlugin.'
+    @mock.patch('cloudbaseinit.plugins.windows.createuser.CreateUserManager.'
                 '_create_user_logon')
     def test_post_create_user(self, mock_create_user_logon):
         mock_osutils = mock.Mock()
-        self._create_user.post_create_user(
-            mock.sentinel.username,
-            mock.sentinel.password,
-            mock_osutils)
+        self._create_user._username = mock.sentinel.username
+        self._create_user._password = mock.sentinel.password
+        self._create_user._expire_status = mock.sentinel.passwd_expires
+        self._create_user.post_create_user(mock_osutils)
 
         mock_create_user_logon.assert_called_once_with(
             mock.sentinel.username,
@@ -87,6 +76,6 @@ class CreateUserPluginTests(unittest.TestCase):
             True)
         self.assertFalse(mock_osutils.close_user_logon_session.called)
         logging_message = (
-            "Cannot create a user logon session for user: \"%s\""
+            "Cannot create a user logon session for %s"
             % mock.sentinel.user_name)
         self.assertTrue(snatcher.output[0].startswith(logging_message))
