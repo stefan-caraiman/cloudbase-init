@@ -24,6 +24,8 @@ PLUGINS = {
                     'cloudconfigplugins.set_timezone.SetTimezonePlugin',
     'set_hostname': 'cloudbaseinit.plugins.common.userdataplugins.'
                     'cloudconfigplugins.set_hostname.SetHostnamePlugin',
+    'users': 'cloudbaseinit.plugins.common.userdataplugins.'
+             'cloudconfigplugins.users.UsersPlugin'
 }
 
 

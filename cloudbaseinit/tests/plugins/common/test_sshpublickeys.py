@@ -53,7 +53,7 @@ class SetUserSSHPublicKeysPluginTests(unittest.TestCase):
                               self._set_ssh_keys_plugin.execute,
                               mock_service, fake_shared_data)
         else:
-            with mock.patch('cloudbaseinit.plugins.common.sshpublickeys'
+            with mock.patch('cloudbaseinit.utils.sshkeys'
                             '.open',
                             mock.mock_open(), create=True):
                 response = self._set_ssh_keys_plugin.execute(mock_service,

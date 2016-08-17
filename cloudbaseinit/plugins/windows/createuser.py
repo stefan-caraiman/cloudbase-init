@@ -35,8 +35,11 @@ class CreateUserPlugin(createuser.BaseCreateUserPlugin):
             LOG.exception('Cannot create a user logon session for user: "%s"',
                           user_name)
 
-    def create_user(self, username, password, osutils):
-        osutils.create_user(username, password)
+    def create_user(self, username, password, password_expires, osutils):
+        osutils.create_user(username, password, password_expires)
 
     def post_create_user(self, user_name, password, osutils):
         self._create_user_logon(user_name, password, osutils)
+
+    def process_user_data(self, data, osutils):
+        self._manage_user_handling(data, osutils, metadata_service=False)

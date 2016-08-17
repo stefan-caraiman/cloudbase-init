@@ -12,17 +12,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import os
-
 from oslo_log import log as oslo_logging
 
-from cloudbaseinit import conf as cloudbaseinit_conf
-from cloudbaseinit import exception
 from cloudbaseinit.osutils import factory as osutils_factory
 from cloudbaseinit.plugins.common import base
+from cloudbaseinit.utils import sshkeys
 
-
-CONF = cloudbaseinit_conf.CONF
 LOG = oslo_logging.getLogger(__name__)
 
 
@@ -34,25 +29,8 @@ class SetUserSSHPublicKeysPlugin(base.BasePlugin):
             LOG.debug('Public keys not found in metadata')
             return base.PLUGIN_EXECUTION_DONE, False
 
-        username = CONF.username
-
         osutils = osutils_factory.get_os_utils()
-        user_home = osutils.get_user_home(username)
 
-        if not user_home:
-            raise exception.CloudbaseInitException("User profile not found!")
-
-        LOG.debug("User home: %s" % user_home)
-
-        user_ssh_dir = os.path.join(user_home, '.ssh')
-        if not os.path.exists(user_ssh_dir):
-            os.makedirs(user_ssh_dir)
-
-        authorized_keys_path = os.path.join(user_ssh_dir, "authorized_keys")
-        LOG.info("Writing SSH public keys in: %s" % authorized_keys_path)
-        with open(authorized_keys_path, 'w') as f:
-            for public_key in public_keys:
-                # All public keys are space-stripped.
-                f.write(public_key + "\n")
+        sshkeys.set_ssh_keys(osutils, public_keys, None)
 
         return base.PLUGIN_EXECUTION_DONE, False

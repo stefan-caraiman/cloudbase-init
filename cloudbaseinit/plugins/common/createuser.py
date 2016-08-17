@@ -31,7 +31,7 @@ class BaseCreateUserPlugin(base.BasePlugin):
     """This is a base class for creating or modifying an user."""
 
     @abc.abstractmethod
-    def create_user(self, username, password, osutils):
+    def create_user(self, username, password, password_expires, osutils):
         """Create a new username, with the given *username*.
 
         This will be called by :meth:`~execute`, whenever
@@ -53,29 +53,42 @@ class BaseCreateUserPlugin(base.BasePlugin):
         maximum_length = osutils.get_maximum_password_length()
         return osutils.generate_random_password(maximum_length)
 
-    def execute(self, service, shared_data):
-        user_name = CONF.username
-        shared_data[constants.SHARED_DATA_USERNAME] = user_name
-
-        osutils = osutils_factory.get_os_utils()
-        password = self._get_password(osutils)
-
+    def _manage_user_handling(self, data, osutils, metadata_service=True):
+        if metadata_service:
+            user_name = CONF.username
+            password = self._get_password(osutils)
+            groups = CONF.groups
+            inactive = expires = False
+            shared_data = data
+            shared_data[constants.SHARED_DATA_USERNAME] = user_name
+        else:
+            user_name = data['name']
+            password = data['passwd']
+            expires = data['expiredate']
+            inactive = data['inactive']
+            user_groups = data['groups']
+            primary_group = data['primary-group']
+            groups = primary_group + user_groups
         if osutils.user_exists(user_name):
             LOG.info('Setting password for existing user "%s"', user_name)
-            osutils.set_user_password(user_name, password)
+            osutils.set_user_password(user_name, password,
+                                      password_expires=expires)
         else:
             LOG.info('Creating user "%s" and setting password', user_name)
-            self.create_user(user_name, password, osutils)
+            self.create_user(user_name, password, expires, osutils)
+            if metadata_service:
+                # TODO(alexpilotti): encrypt with DPAPI
+                shared_data[constants.SHARED_DATA_PASSWORD] = password
+        if not inactive:
+            self.post_create_user(user_name, password, osutils)
 
-            # TODO(alexpilotti): encrypt with DPAPI
-            shared_data[constants.SHARED_DATA_PASSWORD] = password
-
-        self.post_create_user(user_name, password, osutils)
-
-        for group_name in CONF.groups:
+        for group_name in groups:
             try:
                 osutils.add_user_to_local_group(user_name, group_name)
             except Exception:
                 LOG.exception('Cannot add user to group "%s"', group_name)
 
+    def execute(self, service, shared_data):
+        osutils = osutils_factory.get_os_utils()
+        self._manage_user_handling(shared_data, osutils)
         return base.PLUGIN_EXECUTION_DONE, False
