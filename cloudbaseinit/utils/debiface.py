@@ -108,7 +108,6 @@ def parse(data):
         return
 
     LOG.info("Parsing Debian config...\n%s", data)
-    nics = []    # list of NetworkDetails objects
     for lines_pair in _get_iface_blocks(data):
         iface = IFACE_TEMPLATE.copy()
         for lines, use_proxy in zip(lines_pair, (False, True)):
@@ -120,6 +119,6 @@ def parse(data):
                             continue
                     func = DETAIL_PREPROCESS.get(field, lambda value: value)
                     iface[field] = func(value) if value != "None" else None
-        _add_nic(iface, nics)
 
-    return nics
+        if iface and iface != IFACE_TEMPLATE:
+            yield iface
