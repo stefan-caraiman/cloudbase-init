@@ -42,6 +42,13 @@ class CertificateVerifyFailed(ServiceException):
     pass
 
 
+class NetworkDetailsError(CloudbaseInitException):
+
+    """Base exception for all the network data processing related errors."""
+
+    pass
+
+
 class WindowsCloudbaseInitException(CloudbaseInitException):
 
     def __init__(self, msg="%r", error_code=None):
