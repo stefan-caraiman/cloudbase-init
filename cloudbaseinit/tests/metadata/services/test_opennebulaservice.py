@@ -25,6 +25,7 @@ except ImportError:
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.metadata.services import opennebulaservice
 from cloudbaseinit.tests import testutils
+from cloudbaseinit.utils import debiface
 
 
 MAC = "54:EE:75:19:F4:61"    # output must be upper
@@ -104,18 +105,18 @@ OPEN = mock.mock_open(read_data=CONTEXT.encode())
 
 
 def _get_nic_details(iid=0):
-        details = base.NetworkDetails(
-            opennebulaservice.IF_FORMAT.format(iid=iid),
-            MAC,
-            ADDRESS,
-            None,
-            NETMASK,
-            None,
-            BROADCAST,
-            GATEWAY,
-            None,
-            DNSNS.split(" ")
-        )
+        details = {
+            debiface.NAME: opennebulaservice.IF_FORMAT.format(iid=iid),
+            debiface.MAC: MAC,
+            debiface.ADDRESS: ADDRESS,
+            debiface.ADDRESS6: None,
+            debiface.NETMASK: NETMASK,
+            debiface.NETMASK6: None,
+            debiface.BROADCAST: BROADCAST,
+            debiface.GATEWAY: GATEWAY,
+            debiface.GATEWAY6: None,
+            debiface.DNSNS: DNSNS.split(" ")
+        }
         return details
 
 

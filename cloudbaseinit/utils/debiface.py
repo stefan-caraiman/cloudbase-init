@@ -18,9 +18,6 @@ import re
 from oslo_log import log as oslo_logging
 import six
 
-from cloudbaseinit.metadata.services import base as service_base
-
-
 LOG = oslo_logging.getLogger(__name__)
 
 NAME = "name"
@@ -101,9 +98,7 @@ def _add_nic(iface, nics):
     if not iface or iface == IFACE_TEMPLATE:
         return    # no information gathered
     LOG.debug("Found new interface: %s", iface)
-    # Each missing detail is marked as None.
-    nic = service_base.NetworkDetails(**iface)
-    nics.append(nic)
+    nics.append(iface)
 
 
 def parse(data):
