@@ -12,8 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-
-import functools
 import unittest
 
 try:
@@ -21,278 +19,271 @@ try:
 except ImportError:
     import mock
 
+from cloudbaseinit import constants
 from cloudbaseinit import exception
-from cloudbaseinit.metadata.services import base as service_base
-from cloudbaseinit.plugins.common import base as plugin_base
+from cloudbaseinit.metadata.services import basenetworkservice as service_base
 from cloudbaseinit.plugins.common import networkconfig
+from cloudbaseinit.tests.metadata import fake_json_response
 from cloudbaseinit.tests import testutils
+
+
+MODPATH = "cloudbaseinit.plugins.common.networkconfig"
+
+
+class FakeNetworkConfigPlugin(networkconfig.NetworkConfigPlugin):
+
+    @mock.patch("cloudbaseinit.osutils.factory.get_os_utils")
+    def __init__(self, mock_get_os_utils):
+        mock_osutils = mock.MagicMock()
+        mock_get_os_utils.return_value = mock_osutils
+        super(FakeNetworkConfigPlugin, self).__init__()
 
 
 class TestNetworkConfigPlugin(unittest.TestCase):
 
     def setUp(self):
-        self._setUp()
+        self._network_plugin = FakeNetworkConfigPlugin()
+
+    def test_update_link(self):
+        attribs = {k: k for k in service_base.LINK_FIELDS}
+        mock_link = mock.Mock(**attribs)
+        res = (self._network_plugin._update_link(
+               mock_link, {service_base.LINK_FIELDS[0]: "fake_id"}))
+        self.assertEqual(res.id, 'fake_id')
+
+    def test_validate_link(self):
+        mock_link = mock.Mock
+        mock_link.mac_address = fake_json_response.MAC0
+        res = self._network_plugin._validate_link(mock_link)
+        self.assertEqual(res, mock_link)
+
+    @mock.patch(MODPATH + '.NetworkConfigPlugin._on_mac_not_found')
+    def test_validate_link_missing_mac(self, mock_mac_not_found):
+        mock_link = mock.MagicMock()
+        mock_link.mac_address = None
+        mock_mac_not_found.return_value = None
+        self.assertRaises(exception.NetworkDetailsError,
+                          self._network_plugin._validate_link, mock_link)
+
+    @mock.patch(MODPATH + '.NetworkConfigPlugin._update_link')
+    @mock.patch(MODPATH + '.NetworkConfigPlugin._on_mac_not_found')
+    def test_validate_link_new_link(self, mock_mac_not_found,
+                                    mock_update_link):
+        mock_link = mock.Mock
+        mock_update_link.return_value = "fake_link"
+        mock_link.mac_address = None
+        mock_mac_not_found.return_value = fake_json_response.MAC0
+        res = self._network_plugin._validate_link(mock_link)
+        self.assertEqual(res, 'fake_link')
+
+    def test_update_network(self):
+        attribs = {k: k for k in service_base.NETWORK_FIELDS}
+        mock_link = mock.Mock(**attribs)
+        res = (self._network_plugin._update_network(
+               mock_link, {service_base.NETWORK_FIELDS[0]: "fake_id"}))
+        self.assertEqual(res.id, 'fake_id')
+
+    def test_validate_network(self):
+        fake_ip = fake_json_response.ADDRESS0 + "/24"
+        mock_network = mock.Mock(netmask=None, gateway=None,
+                                 ip_address=fake_ip)
+        mock_route = mock.Mock(network=fake_json_response.ADDRESS0,
+                               gateway=fake_json_response.GATEWAY0,
+                               netmask='32')
+        mock_routes = [mock_route]
+        res = self._network_plugin._validate_network(mock_network, mock_routes)
+        self.assertIsInstance(res, service_base.Network)
+
+    def test_validate_network_netmask_missing(self):
+        mock_route = mock_network = mock.Mock()
+        mock_network.netmask = None
+        self.assertRaises(exception.NetworkDetailsError,
+                          self._network_plugin._validate_network,
+                          mock_network, mock_route)
+
+    @mock.patch(MODPATH + '.NetworkConfigPlugin._on_gateway_not_found')
+    def test_validate_network_gateway_missing(self, mock_gateway_not_found):
+        mock_route = mock.Mock()
+        mock_network = mock.Mock(netmask=fake_json_response.NETMASK60,
+                                 gateway=None)
+        mock_gateway_not_found.return_value = None
+        self.assertRaises(exception.NetworkDetailsError,
+                          self._network_plugin._validate_network, mock_network,
+                          mock_route)
+
+    def test_on_mac_not_found_fail(self):
+        mock_link = mock.Mock
+        mock_link.name = None
+        res = self._network_plugin._on_mac_not_found(mock_link)
+        self.assertIsNone(res)
+
+    def test_on_mac_not_found_found(self):
+        mock_link = mock.Mock
+        mock_link.name = "fake_name"
+        self._network_plugin._adapters = [(mock.sentinel.name,
+                                           mock.sentinel.mac)]
+        res = self._network_plugin._on_mac_not_found(mock_link)
+        self.assertIsNone(res)
+
+    def test_on_mac_not_found(self):
+        mock_link = mock.Mock
+        mock_link.name = "fake_name"
+        self._network_plugin._adapters = [("fake_name",
+                                           fake_json_response.MAC0)]
+        res = self._network_plugin._on_mac_not_found(mock_link)
+        self.assertEqual(res, fake_json_response.MAC0.upper())
+
+    def _test_on_netmask_not_found(self, network):
+        if not network.ip_address:
+            res = self._network_plugin._on_netmask_not_found(network)
+            self.assertIsNone(res)
+            return
+        if "/" not in network.ip_address:
+            res = self._network_plugin._on_netmask_not_found(network)
+            self.assertIsNone(res)
+            return
+        else:
+            res = self._network_plugin._on_netmask_not_found(network)
+            self.assertIsNotNone(res)
+
+    def test_on_netmask_not_found_no_ip(self):
+        mock_network = mock.Mock(ip_address=None)
+        self._test_on_netmask_not_found(mock_network)
+
+    def test_on_netmask_not_found(self):
+        ip_address = fake_json_response.ADDRESS0
+        netmask = '/24'
+        mock_ip_address = ip_address + netmask
+        mock_network = mock.Mock(ip_address=mock_ip_address)
+        self._test_on_netmask_not_found(mock_network)
+
+    def test_on_netmask_not_found_fail(self):
+        mock_network = mock.Mock(ip_address=fake_json_response.ADDRESS0)
+        self._test_on_netmask_not_found(mock_network)
+
+    def test_on_gateway_not_found_incomplete(self):
+        mock_route = mock.Mock(network=fake_json_response.ADDRESS0,
+                               gateway=fake_json_response.GATEWAY0,
+                               netmask=None)
+        routes = [mock_route]
+        expected_output = ["The route {} does not contains all the "
+                           "required fields.".format(mock_route),
+                           "No extra information regarding gateway available."]
+        with testutils.LogSnatcher('cloudbaseinit.plugins.'
+                                   'common.networkconfig') as snatcher:
+            self._network_plugin._on_gateway_not_found(routes)
+        self.assertEqual(snatcher.output, expected_output)
+
+    def test_on_gateway_not_found(self):
+        mock_route = mock.Mock(network=fake_json_response.ADDRESS0,
+                               gateway=fake_json_response.GATEWAY0,
+                               netmask='32')
+        routes = [mock_route]
+        res = self._network_plugin._on_gateway_not_found(routes)
+        self.assertEqual(res, fake_json_response.GATEWAY0)
 
     @mock.patch("cloudbaseinit.osutils.factory.get_os_utils")
-    def _test_execute(self, mock_get_os_utils,
-                      network_adapters=None,
-                      network_details=None,
-                      invalid_details=False,
-                      missed_adapters=[],
-                      extra_network_details=[]):
-        # Prepare mock environment.
+    def test_set_static_network_config_v4(self, mock_get_os_utils):
+        mock_network = mock.MagicMock()
+        mock_link = mock.MagicMock()
+        (mock_network.ip_address, mock_network.netmask, mock_network.gateway,
+         mock_network.broadcast, mock_network.dns_nameservers) = (
+            mock.sentinel.ip_address, mock.sentinel.netmask,
+            mock.sentinel.gateway, mock.sentinel.broadcast,
+            mock.sentinel.dns_nameservers)
+        mock_link.mac_address = mock.sentinel.mac_address
+        result_config = (self._network_plugin._set_static_network_config_v4(
+            mock_link, mock_network))
+        self.assertTrue(result_config)
+
+    @mock.patch(MODPATH + '.NetworkConfigPlugin._validate_network')
+    def test_configure_phy_fail(self, mock_validate_network):
+        mock_link = mock.Mock
+        mock_net_details = mock.Mock()
+        self._network_plugin._network_details = mock_net_details
+        mock_net_details.get_link_networks.return_value = [mock_link]
+        mock_net_details.get_network_routes.return_value = "fake_route"
+        mock_link.mac_address = fake_json_response.MAC0
+        mock_link.id = mock.sentinel.id
+        mock_validate_network.side_effect = exception.NetworkDetailsError
+        res = self._network_plugin._configure_phy(mock_link)
+        self.assertFalse(res)
+
+    def test_configure_phy(self):
+        mock_net_details = mock_network = mock_link = mock.MagicMock()
+        self._network_plugin._network_details = mock_net_details
+        mock_net_details.get_link_networks.return_value = (mock_network,)
+        mock_network.version = constants.IPV6
+        mock_link.id = mock.sentinel.id
+        result_config = self._network_plugin._configure_phy(mock_link)
+        self.assertFalse(result_config)
+        mock_network.version = constants.IPV4
+        result_config = self._network_plugin._configure_phy(mock_link)
+        self.assertIsNotNone(result_config)
+
+    @mock.patch(MODPATH + '.NetworkConfigPlugin._configure_phy')
+    def test_configure_interface(self, mock_config_phy):
+        mock_link = mock.MagicMock(mac_address=None, name=None, type=None)
+        self.assertRaises(exception.NetworkDetailsError,
+                          self._network_plugin._configure_interface, mock_link)
+        mock_link.type = constants.PHY
+        mock_link.name = "fake_name"
+        mock_link.mac_address = fake_json_response.MAC0
+        res = self._network_plugin._configure_interface(mock_link)
+        self.assertTrue(res)
+
+    @mock.patch(MODPATH + '.NetworkConfigPlugin._configure_interface')
+    def _test_execute(self, mock_conf_interface, details, conf_error=False,
+                      expected_output=None):
         mock_service = mock.MagicMock()
+        mock_link = mock.MagicMock()
         mock_shared_data = mock.Mock()
-        mock_osutils = mock.MagicMock()
-        mock_service.get_network_details.return_value = network_details
-        mock_get_os_utils.return_value = mock_osutils
-        mock_osutils.get_network_adapters.return_value = network_adapters
-        mock_osutils.set_static_network_config.return_value = True
-        network_execute = functools.partial(
-            self._network_plugin.execute,
-            mock_service, mock_shared_data
-        )
-        # Actual tests.
-        if not network_details:
-            ret = network_execute()
-            self.assertEqual((plugin_base.PLUGIN_EXECUTION_DONE, False), ret)
-            return
-        if invalid_details or not network_adapters:
-            with self.assertRaises(exception.CloudbaseInitException):
-                network_execute()
-            return
-        # Good to go for the configuration process.
-        with testutils.LogSnatcher('cloudbaseinit.plugins.'
-                                   'common.networkconfig'):
-            ret = network_execute()
+        mock_service.get_network_details.return_value = details
+        expected_result = (1, False)
+        if not details:
+            ret = self._network_plugin.execute(mock_service, mock_shared_data)
+            self.assertEqual(ret, expected_result)
+        if not isinstance(details, service_base.NetworkDetails) and details:
+            exc = exception.CloudbaseInitException
+            self.assertRaises(exc, self._network_plugin.execute,
+                              mock_service, mock_shared_data)
+        elif isinstance(details, service_base.NetworkDetails):
+            details.get_links.return_value = [mock_link]
+            mock_link.mac_address = fake_json_response.MAC0
+            if conf_error:
+                exc = exception.NetworkDetailsError("error")
+                mock_conf_interface.side_effect = [exc]
+                with testutils.LogSnatcher('cloudbaseinit.plugins.'
+                                           'common.networkconfig') as snatcher:
+                    ret = self._network_plugin.execute(mock_service,
+                                                       mock_shared_data)
+                self.assertEqual(expected_output, snatcher.output[-2::])
+                self.assertEqual(ret, expected_result)
+            else:
+                expected_result = (1, True)
+                mock_conf_interface.return_value = True
+                ret = self._network_plugin.execute(mock_service,
+                                                   mock_shared_data)
+                self.assertEqual(ret, expected_result)
 
-        calls, calls6 = [], []
-        for adapter in set(network_adapters) - set(missed_adapters):
-            nics = [nic for nic in (network_details +
-                                    extra_network_details)
-                    if nic.mac == adapter[1]]
-            self.assertTrue(nics)    # missed_adapters should do the job
-            nic = nics[0]
-            call = mock.call(
-                nic.mac,
-                nic.address,
-                nic.netmask,
-                nic.broadcast,
-                nic.gateway,
-                nic.dnsnameservers
-            )
-            call6 = mock.call(
-                nic.mac,
-                nic.address6,
-                nic.netmask6,
-                nic.gateway6
-            )
-            calls.append(call)
-            if nic.address6 and nic.netmask6:
-                calls6.append(call6)
-        self.assertEqual(
-            len(calls),
-            mock_osutils.set_static_network_config.call_count)
-        self.assertEqual(
-            len(calls6),
-            mock_osutils.set_static_network_config_v6.call_count)
-        mock_osutils.set_static_network_config.assert_has_calls(
-            calls, any_order=True)
-        mock_osutils.set_static_network_config_v6.assert_has_calls(
-            calls6, any_order=True)
-        reboot = len(missed_adapters) != self._count
-        self.assertEqual((plugin_base.PLUGIN_EXECUTION_DONE, reboot), ret)
-
-    def _setUp(self, same_names=True, wrong_names=False, no_macs=False):
-        # Generate fake pairs of NetworkDetails objects and
-        # local ethernet network adapters.
-        iface_name = "Ethernet" if wrong_names else "eth"
-        self._count = 3
-        details_names = ["{}{}".format(iface_name, idx)
-                         for idx in range(self._count)]
-        if same_names:
-            adapters_names = details_names[:]
-        else:
-            adapters_names = ["vm " + name for name in details_names]
-        macs = [
-            "54:EE:75:19:F4:61",
-            "54:EE:75:19:F4:62",
-            "54:EE:75:19:F4:63"
-        ]
-        addresses = [
-            "192.168.122.101",
-            "192.168.103.104",
-            "192.168.122.105",
-        ]
-        addresses6 = [
-            "::ffff:c0a8:7a65",
-            "::ffff:c0a8:6768",
-            "::ffff:c0a8:7a69"
-        ]
-        netmasks = [
-            "255.255.255.0",
-            "255.255.0.0",
-            "255.255.255.128",
-        ]
-        netmasks6 = [
-            "96",
-            "64",
-            "100"
-        ]
-        broadcasts = [
-            "192.168.122.255",
-            "192.168.255.255",
-            "192.168.122.127",
-        ]
-        gateways = [
-            "192.168.122.1",
-            "192.168.122.16",
-            "192.168.122.32",
-        ]
-        gateways6 = [
-            "::ffff:c0a8:7a01",
-            "::ffff:c0a8:7a10",
-            "::ffff:c0a8:7a20"
-        ]
-        dnsnses = [
-            "8.8.8.8",
-            "8.8.8.8 8.8.4.4",
-            "8.8.8.8 0.0.0.0",
-        ]
-        self._network_adapters = []
-        self._network_details = []
-        for ind in range(self._count):
-            adapter = (adapters_names[ind], macs[ind])
-            nic = service_base.NetworkDetails(
-                details_names[ind],
-                None if no_macs else macs[ind],
-                addresses[ind],
-                addresses6[ind],
-                netmasks[ind],
-                netmasks6[ind],
-                broadcasts[ind],
-                gateways[ind],
-                gateways6[ind],
-                dnsnses[ind].split()
-            )
-            self._network_adapters.append(adapter)
-            self._network_details.append(nic)
-        # Get the network config plugin.
-        self._network_plugin = networkconfig.NetworkConfigPlugin()
-        # Execution wrapper.
-        self._partial_test_execute = functools.partial(
-            self._test_execute,
-            network_adapters=self._network_adapters,
-            network_details=self._network_details
-        )
-
-    def test_execute_no_network_details(self):
-        self._network_details[:] = []
-        self._partial_test_execute()
-
-    def test_execute_no_network_adapters(self):
-        self._network_adapters[:] = []
-        self._partial_test_execute()
+    def test_execute_information_not_available(self):
+        self._test_execute(details=None)
 
     def test_execute_invalid_network_details(self):
-        self._network_details.append([None] * 6)
-        self._partial_test_execute(invalid_details=True)
+        mock_details = mock.MagicMock()
+        self._test_execute(details=mock_details)
 
-    def test_execute_invalid_network_details_name(self):
-        self._setUp(wrong_names=True, no_macs=True)
-        self._partial_test_execute(invalid_details=True)
+    def test_execute_failed_to_configure(self):
+        mock_details = mock.MagicMock()
+        mock_details.__class__ = service_base.NetworkDetails
+        output = [
+            ("Failed to configure the interface %r: %s" %
+                (fake_json_response.MAC0, 'error')),
+            'No adapters were configured']
+        self._test_execute(details=mock_details, conf_error=True,
+                           expected_output=output)
 
-    def test_execute_single(self):
-        for _ in range(self._count - 1):
-            self._network_adapters.pop()
-            self._network_details.pop()
-        self._partial_test_execute()
-
-    def test_execute_multiple(self):
-        self._partial_test_execute()
-
-    def test_execute_missing_one(self):
-        self.assertGreater(self._count, 1)
-        self._network_details.pop(0)
-        adapter = self._network_adapters[0]
-        self._partial_test_execute(missed_adapters=[adapter])
-
-    def test_execute_missing_all(self):
-        nic = self._network_details[0]
-        nic = service_base.NetworkDetails(
-            nic.name,
-            "00" + nic.mac[2:],
-            nic.address,
-            nic.address6,
-            nic.netmask,
-            nic.netmask6,
-            nic.broadcast,
-            nic.gateway,
-            nic.gateway6,
-            nic.dnsnameservers
-        )
-        self._network_details[:] = [nic]
-        self._partial_test_execute(missed_adapters=self._network_adapters)
-
-    def _test_execute_missing_smth(self, name=False, mac=False,
-                                   address=False, address6=False,
-                                   netmask=False, netmask6=False,
-                                   gateway=False, fail=False):
-        ind = self._count - 1
-        nic = self._network_details[ind]
-        nic2 = service_base.NetworkDetails(
-            None if name else nic.name,
-            None if mac else nic.mac,
-            None if address else nic.address,
-            None if address6 else nic.address6,
-            None if netmask else nic.netmask,
-            None if netmask6 else nic.netmask6,
-            nic.broadcast,
-            None if gateway else nic.gateway,
-            None if gateway else nic.gateway6,
-            nic.dnsnameservers
-        )
-        self._network_details[ind] = nic2
-        # Excluding address and gateway switches...
-        if not fail:
-            # Even this way, all adapters should be configured.
-            missed_adapters = []
-            extra_network_details = [nic]
-        else:
-            # Both name and MAC are missing, so we can't make the match.
-            # Or other vital details.
-            missed_adapters = [self._network_adapters[ind]]
-            extra_network_details = []
-        self._partial_test_execute(
-            missed_adapters=missed_adapters,
-            extra_network_details=extra_network_details
-        )
-
-    def test_execute_missing_mac(self):
-        self._test_execute_missing_smth(mac=True)
-
-    def test_execute_missing_mac2(self):
-        self._setUp(same_names=False)
-        self._test_execute_missing_smth(mac=True)
-
-    def test_execute_missing_name_mac(self):
-        self._test_execute_missing_smth(name=True, mac=True, fail=True)
-
-    def test_execute_missing_address(self):
-        self._test_execute_missing_smth(address=True)
-
-    def test_execute_missing_netmask(self):
-        self._test_execute_missing_smth(netmask=True)
-
-    def test_execute_missing_address6(self):
-        self._test_execute_missing_smth(address6=True)
-
-    def test_execute_missing_netmask6(self):
-        self._test_execute_missing_smth(netmask6=True)
-
-    def test_execute_missing_address_netmask6(self):
-        self._test_execute_missing_smth(address=True, netmask6=True,
-                                        fail=True)
-
-    def test_execute_missing_gateway(self):
-        self._test_execute_missing_smth(gateway=True)
+    def test_execute_reboot(self):
+        mock_details = mock.MagicMock()
+        mock_details.__class__ = service_base.NetworkDetails
+        self._test_execute(details=mock_details)

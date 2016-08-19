@@ -65,28 +65,6 @@ class NetworkUtilsTest(unittest.TestCase):
 
         self.assertIn('ValueError', snatcher.output[-1])
 
-    def test_address6_to_4_truncate(self):
-        address_map = {
-            "0:0:0:0:0:ffff:c0a8:f": "192.168.0.15",
-            "::ffff:c0a8:e": "192.168.0.14",
-            "::1": "0.0.0.1",
-            "1:2:3:4:5::8": "0.0.0.8",
-            "::": "0.0.0.0",
-            "::7f00:1": "127.0.0.1"
-        }
-        for v6, v4 in address_map.items():
-            self.assertEqual(v4, network.address6_to_4_truncate(v6))
-
-    def test_netmask6_to_4_truncate(self):
-        netmask_map = {
-            "128": "255.255.255.255",
-            "96": "255.255.255.0",
-            "0": "0.0.0.0",
-            "100": "255.255.255.128"
-        }
-        for v6, v4 in netmask_map.items():
-            self.assertEqual(v4, network.netmask6_to_4_truncate(v6))
-
     def _test_netmask_to_int(self, mock_netmask):
         if mock_netmask is None:
             res = network.netmask_to_int(mock_netmask)
