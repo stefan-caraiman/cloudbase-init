@@ -30,7 +30,7 @@ class TestInterfacesParser(unittest.TestCase):
     def _test_parse_nics(self, no_nics=False):
         with testutils.LogSnatcher('cloudbaseinit.utils.'
                                    'debiface') as snatcher:
-            nics = debiface.parse(self.data)
+            nics = [nic for nic in debiface.parse(self.data)]
 
         if no_nics:
             expected_logging = 'Invalid Debian config to parse:'

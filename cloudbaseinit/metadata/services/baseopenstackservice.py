@@ -19,7 +19,9 @@ import posixpath
 from oslo_log import log as oslo_logging
 
 from cloudbaseinit import conf as cloudbaseinit_conf
+from cloudbaseinit import constant
 from cloudbaseinit.metadata.services import base
+from cloudbaseinit.metadata.services import basenetworkservice as service_base
 from cloudbaseinit.utils import debiface
 from cloudbaseinit.utils import encoding
 from cloudbaseinit.utils import x509constants
@@ -28,7 +30,74 @@ CONF = cloudbaseinit_conf.CONF
 LOG = oslo_logging.getLogger(__name__)
 
 
-class BaseOpenStackService(base.BaseMetadataService):
+class _NetworkDetailsBuilder(service_base.NetworkDetailsBuilder):
+
+    """OpenStack network details builder."""
+
+    def __init__(self, service, content):
+        super(_NetworkDetailsBuilder, self).__init__(service)
+        self._link.update({
+            constant.NAME: self._Field(
+                name=constant.NAME, alias=debiface.NAME),
+            constant.MAC_ADDRESS: self._Field(
+                name=constant.MAC_ADDRESS, alias=debiface.MAC),
+        })
+        self._network.update({
+            constant.IP_ADDRESS: self._Field(
+                name=constant.IP_ADDRESS, alias=debiface.ADDRESS),
+            constant.NETMASK: self._Field(
+                name=constant.NETMASK, alias=debiface.NETMASK),
+            constant.GATEWAY: self._Field(
+                name=constant.GATEWAY, alias=debiface.GATEWAY),
+            constant.BROADCAST: self._Field(
+                name=constant.BROADCAST, alias=debiface.BROADCAST),
+            constant.DNS: self._Field(
+                name=constant.DNS, alias=debiface.DNSNS, default=[]),
+        })
+
+        self._content = content
+        self._links = {}
+        self._networks = {}
+
+    def _process_link_networks(self, link, raw_data):
+        """Digest the information related to networks."""
+        raw_data[constant.ASSIGNED_TO] = link[constant.ID]
+        raw_ipv6_network = {
+            constant.IP_ADDRESS: raw_data.get(debiface.ADDRESS6),
+            constant.NETMASK: raw_data.get(debiface.NETMASK6),
+            constant.GATEWAY: raw_data.get(debiface.GATEWAY6),
+            constant.VERSION: constant.IPV6,
+            constant.ASSIGNED_TO: link[constant.ID],
+            constant.PRIORITY: 10,
+        }
+
+        success = False
+        for data in (raw_data, raw_ipv6_network):
+            network = self._get_fields(self._network.values(), data)
+            if network:
+                self._networks[network[constant.ID]] = network
+                success = True
+        return success
+
+    def _process(self):
+        """Process the received network information."""
+        for raw_link in debiface.parse(self._content):
+            link = self._get_fields(self._link.values(), raw_link)
+            if link:
+                if self._process_link_networks(link, raw_link):
+                    self._links[link[constant.ID]] = link
+            else:
+                # Note(alexcoman): The current raw_link does not contain
+                #                  all the required fields.
+                LOG.warning("%r does not contains all the required fields.",
+                            raw_link)
+
+
+class BaseOpenStackService(service_base.BaseNetworkMetadataService):
+
+    def __init__(self):
+        super(BaseOpenStackService, self).__init__()
+        self._network_details_builder = None
 
     def get_content(self, name):
         path = posixpath.normpath(
@@ -66,20 +135,6 @@ class BaseOpenStackService(base.BaseMetadataService):
                 if key_dict["type"] == "ssh":
                     public_keys.append(key_dict["data"])
         return list(set((key.strip() for key in public_keys)))
-
-    def get_network_details(self):
-        network_config = self._get_meta_data().get('network_config')
-        if not network_config:
-            return None
-        key = "content_path"
-        if key not in network_config:
-            return None
-
-        content_name = network_config[key].rsplit("/", 1)[-1]
-        content = self.get_content(content_name)
-        content = encoding.get_as_string(content)
-
-        return debiface.parse(content)
 
     def get_admin_password(self):
         meta_data = self._get_meta_data()
@@ -136,3 +191,29 @@ class BaseOpenStackService(base.BaseMetadataService):
                 LOG.debug("user_data metadata not present")
 
         return list(set((cert.strip() for cert in certs)))
+
+    def _get_network_details_builder(self):
+        """Get the required `NetworkDetailsBuilder` object.
+
+        The `NetworkDetailsBuilder` is used in order to create the
+        `NetworkDetails` object using the network related information
+        exposed by the current metadata provider.
+        """
+        network_config = self._get_meta_data().get('network_config')
+        if not network_config:
+            LOG.debug("No network_config available.")
+            return None
+
+        key = "content_path"
+        if key not in network_config:
+            LOG.debug("The %r key was not found in network_config.", key)
+            return None
+
+        if not self._network_details_builder:
+            content_name = network_config[key].rsplit("/", 1)[-1]
+            content = self.get_content(content_name)
+            content = encoding.get_as_string(content)
+            self._network_details_builder = _NetworkDetailsBuilder(
+                service=self, content=content)
+
+        return self._network_details_builder

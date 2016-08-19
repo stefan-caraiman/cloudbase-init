@@ -128,18 +128,6 @@ class NetworkConfigPlugin(plugin_base.BasePlugin):
                   " information %r.", link.name, self._adapters)
         return None
 
-    def _set_static_network_config_v4(self, link, network):
-        """Set IPv4 info for a network card."""
-        LOG.debug("Setting static network config %r for %r", network, link)
-        return self._osutils.set_static_network_config(
-            mac_address=link.mac_address,
-            address=network.ip_address,
-            netmask=network.netmask,
-            broadcast=network.broadcast,
-            gateway=network.gateway,
-            dnsnameservers=network.dns_nameservers,
-        )
-
     @staticmethod
     def _on_netmask_not_found(network):
         """Handle the scenario where the netmask is missing from raw data.
@@ -200,6 +188,18 @@ class NetworkConfigPlugin(plugin_base.BasePlugin):
 
         LOG.debug("No extra information regarding gateway available.")
 
+    def _set_static_network_config_v4(self, link, network):
+        """Set IPv4 info for a network card."""
+        LOG.debug("Setting static network config %r for %r", network, link)
+        return self._osutils.set_static_network_config(
+            mac_address=link.mac_address,
+            address=network.ip_address,
+            netmask=network.netmask,
+            broadcast=network.broadcast,
+            gateway=network.gateway,
+            dnsnameservers=network.dns_nameservers,
+        )
+
     def _configure_phy(self, link):
         """Configure physical NICs."""
         LOG.debug("Configuring the physical NIC: %r.", link.mac_address)
@@ -211,6 +211,7 @@ class NetworkConfigPlugin(plugin_base.BasePlugin):
             except exception.NetworkDetailsError as exc:
                 LOG.debug("Failed to configure network %s: %s", network, exc)
                 continue
+
             LOG.debug("Configuring network %(id)r.", {"id": network.id})
             if network.version == constant.IPV4:
                 response |= self._set_static_network_config_v4(link, network)
