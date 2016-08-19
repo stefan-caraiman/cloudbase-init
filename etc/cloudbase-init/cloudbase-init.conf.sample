@@ -1,0 +1,137 @@
+[DEFAULT]
+
+# If set to true, the logging level will be set to DEBUG instead of
+# the default INFO level.
+debug=true
+
+# If set to false, the logging level will be set to WARNING instead
+# of the default INFO level.
+verbose=true
+
+# The base directory used for relative log_file paths.
+logdir=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\log\
+
+# Name of log file to send logging output to.
+# If no default is set, logging will go to stderr.
+logfile=cloudbase-init-unattend.log
+
+# List of package logging levels in logger=LEVEL pairs.
+default_log_levels=comtypes=INFO,suds=INFO,iso8601=WARN,requests=WARN
+
+# Serial port logging settings.
+# Format: "port,baudrate,parity,bytesize", e.g.: "COM1,115200,N,8". '
+# Set to None (default) to disable.
+logging_serial_port_settings=
+
+# User to be added to the system or updated if already existing.
+username=Admin
+
+# Groups to which the user specified in "username" will be added.
+groups=Administrators
+
+# Set the password provided in the configuration.
+# Note: If False or no password is provided, a random one will be set.
+inject_user_password=true
+
+# Control the behaviour of what happens at next logon.
+# If this option is set to "always", then the user will be forced to
+# change the password  at next logon. If it is set to "clear_text_injected_only",
+# then the user will have to change the password only if the password is a clear
+# text password, coming from the metadata. The last option is "no", when the user
+# is never forced to change the password.
+first_logon_behaviour=clear_text_injected_only
+
+# Path location containing scripts to be executed when the plugin runs
+local_scripts_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScripts\
+
+# Configures the network interfaces MTU based on the values provided via DHCP.
+mtu_use_dhcp_config=true
+
+# Configures NTP client time synchronization using the NTP servers provided via DHCP.
+ntp_use_dhcp_config=false
+
+# List of volumes that need to be extended if contiguous space is available on
+# the disk. By default all the available volumes can be extended. Volumes must
+# be specified using a comma separated list of volume indexes, e.g.: "1,2"
+volumes_to_extend=
+
+# Activates Windows automatically
+activate_windows=false
+
+# Enables basic authentication for the WinRM HTTPS listener
+winrm_enable_basic_auth=true
+
+# Truncates the hostname to 15 characters for Netbios compatibility.
+netbios_host_name_compatibility = True
+
+# Path to "bsdtar", used to extract ISO ConfigDrive files
+bsdtar_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\bin\bsdtar.exe
+
+# Path to "mtools" program suite, used for interacting with VFAT filesystems.
+mtools_path=C:\Program Files\Cloudbase Solutions\Cloudbase-Init\bin\
+
+# Allows OS reboots requested by plugins.
+allow_reboot=true
+
+# In case of execution as a service, specifies if the service must be gracefully
+# stopped before exiting.
+stop_service_on_exit=true
+
+# Check if there is a newer version of cloudbase-init available.
+# If this option is activated, a log message will be emitted if there
+# is a newer version available.
+check_latest_version=true
+
+# List of enabled metadata service classes, to be tested for availability
+# in the provided order. The first available service will be used to
+# retrieve metadata.
+# metadata_services=
+
+# List of enabled plugin classes, to executed in the provided order.
+# plugins=
+
+[config_drive]
+# Look for an ISO config drive in raw HDDs.
+# raw_hdd=true
+
+# Look for a config drive in the attached cdrom drives.
+# cdrom=true
+
+# Look for a config drive in VFAT filesystems
+# vfat=true
+
+# Supported formats of a configuration drive.
+# types = vfat,iso
+
+# Supported configuration drive locations
+# locations = cdrom,hdd,partition
+
+[openstack]
+# The base URL where the service looks for metadata
+# metadata_base_url=http://169.254.169.254/
+
+# Add a route for the metadata ip address to the gateway.
+# add_metadata_private_ip_route=true
+
+[ec2]
+# The base URL where the service looks for metadata
+# metadata_base_url=http://169.254.169.254/
+
+# Add a route for the metadata ip address to the gateway.
+# add_metadata_private_ip_route=true
+
+[maas]
+# The base URL for MaaS metadata.
+# metadata_base_url=
+
+# The MaaS OAuth consumer key
+# oauth_consumer_key=
+
+# The MaaS OAuth consumer secret
+# oauth_consumer_secret=
+
+# The MaaS OAuth token key
+oauth_token_key=
+
+# The MaaS OAuth token secret
+oauth_token_secret=
