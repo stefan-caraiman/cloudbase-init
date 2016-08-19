@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import six
 import unittest
 
 try:
@@ -20,6 +21,8 @@ except ImportError:
     import mock
 
 from cloudbaseinit import conf as cloudbaseinit_conf
+from cloudbaseinit import constant
+from cloudbaseinit.tests.metadata import fake_json_response
 from cloudbaseinit.tests import testutils
 from cloudbaseinit.utils import network
 
@@ -83,3 +86,45 @@ class NetworkUtilsTest(unittest.TestCase):
         }
         for v6, v4 in netmask_map.items():
             self.assertEqual(v4, network.netmask6_to_4_truncate(v6))
+
+    def _test_netmask_to_int(self, mock_netmask):
+        if mock_netmask is None:
+            res = network.netmask_to_int(mock_netmask)
+            self.assertIsNone(res)
+            return
+        if isinstance(mock_netmask, six.string_types) and (mock_netmask.
+                                                           isdigit()):
+            res = network.netmask_to_int(mock_netmask)
+            self.assertIsInstance(res, int)
+            return
+        else:
+            res = network.netmask_to_int(mock_netmask)
+            self.assertIsInstance(res, int)
+
+    def test_netmask_to_int_netmask_none(self):
+        mock_netmask = None
+        self._test_netmask_to_int(mock_netmask)
+
+    def test_netmask_to_int_digit_netmask(self):
+        mock_netmask = fake_json_response.NETMASK60
+        self._test_netmask_to_int(mock_netmask)
+
+    def test_netmask_to_int(self):
+        mock_netmask = six.u(fake_json_response.NETMASK0)
+        self._test_netmask_to_int(mock_netmask)
+
+    def test_digest_interface(self):
+        mock_address = six.u(fake_json_response.ADDRESS0)
+        mock_netmask = fake_json_response.NETMASK1
+        expected_interface = {
+            constant.BROADCAST: fake_json_response.BROADCAST0,
+            constant.NETMASK: 24,
+            constant.VERSION: constant.IPV4,
+            constant.IP_ADDRESS: fake_json_response.ADDRESS0}
+        result_interface = (network.process_interface(mock_address,
+                                                      mock_netmask))
+        self.assertEqual(result_interface, expected_interface)
+        # Cover for ip_address with port given
+        mock_address += "/24"
+        result_interface = (network.process_interface(mock_address))
+        self.assertEqual(result_interface, expected_interface)

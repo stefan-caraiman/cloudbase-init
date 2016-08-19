@@ -49,6 +49,13 @@ class DataProcessingError(CloudbaseInitException):
     pass
 
 
+class NetworkDetailsError(DataProcessingError):
+
+    """Base exception for all the network data processing related errors."""
+
+    pass
+
+
 class WindowsCloudbaseInitException(CloudbaseInitException):
 
     def __init__(self, msg="%r", error_code=None):
