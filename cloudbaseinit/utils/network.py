@@ -18,10 +18,13 @@ import socket
 import struct
 import sys
 
+import ipaddress
 from oslo_log import log as oslo_logging
+import six
 from six.moves.urllib import parse
 from six.moves.urllib import request
 
+from cloudbaseinit import constants
 from cloudbaseinit.osutils import factory as osutils_factory
 
 
@@ -83,3 +86,36 @@ def netmask6_to_4_truncate(netmask6):
     mask = "1" * length + "0" * (32 - length)
     network_address = struct.pack("!L", int(mask, 2))
     return socket.inet_ntoa(network_address)
+
+
+def netmask_to_int(netmask):
+    """Compute the condensed netmask."""
+    if netmask is None:
+        return None
+    elif isinstance(netmask, six.string_types) and netmask.isdigit():
+        return int(netmask)
+
+    netmask = ipaddress.ip_address(six.u("%s") % netmask)
+    separator = "." if netmask.version == 4 else ":"
+    base = 10 if netmask.version == 4 else 16
+
+    result = 0
+    for field in str(netmask.exploded).split(separator):
+        result += bin(int(field, base)).count("1")
+    return result
+
+
+def process_interface(ip_address, netmask=None):
+    """Digest the information related to the current interface."""
+    if netmask and "/" not in ip_address:
+        ip_address = six.u("%s/%s") % (ip_address, netmask)
+    else:
+        ip_address = six.u("%s") % ip_address
+
+    ip_interface = ipaddress.ip_interface(ip_address)
+    return {
+        constants.BROADCAST: str(ip_interface.network.broadcast_address),
+        constants.NETMASK: netmask_to_int(str(ip_interface.netmask)),
+        constants.IP_ADDRESS: str(ip_interface.ip.exploded),
+        constants.VERSION: int(ip_interface.version)
+    }
