@@ -15,9 +15,11 @@
 # pylint: disable=protected-access
 
 import copy
+import uuid
 
 import six
 
+from cloudbaseinit import constant
 from cloudbaseinit import exception
 
 
@@ -249,3 +251,75 @@ class Model(object):
     def dump(self):
         """Create a dictionary with the content of the current model."""
         return self._data.copy()
+
+
+class Link(Model):
+
+    """Model that contains information regarding an interface."""
+
+    link_id = Field(name=constant.LINK_ID,
+                    default=lambda: str(uuid.uuid1()))
+    name = Field(name=constant.NAME)
+    mac_address = Field(name=constant.MAC_ADDRESS)
+    mtu = Field(name=constant.MTU)
+    link_type = Field(name=constant.LINK_TYPE, default=constant.PHY)
+    priority = Field(name=constant.PRIORITY, default=0)
+
+
+class BondLink(Link):
+
+    """Model that contains information regarding an interface from a bond."""
+
+    bond_links = Field(name=constant.BOND_LINKS)
+    bond_mode = Field(name=constant.BOND_MODE)
+    bond_miimon = Field(name=constant.BOND_MIIMON)
+    bond_hash_policy = Field(name=constant.BOND_HASH_POLICY)
+    link_type = Field(name=constant.LINK_TYPE, default=constant.BOND)
+    priority = Field(name=constant.PRIORITY, default=10)
+
+
+class VLANLink(Link):
+
+    """Model that contains information regarding an interface from a VLAN."""
+
+    vlan_id = Field(name=constant.VLAN_ID)
+    vlan_link = Field(name=constant.VLAN_LINK)
+    link_type = Field(name=constant.LINK_TYPE, default=constant.VLAN)
+    priority = Field(name=constant.PRIORITY, default=20)
+
+
+class Subnetwork(Model):
+
+    """Model that contains information regarding a subnetwork."""
+
+    subnet_id = Field(name=constant.SUBNET_ID,
+                      default=lambda: str(uuid.uuid1()))
+    assigned_to = Field(name=constant.ASSIGNED_TO)
+    priority = Field(name=constant.PRIORITY, default=10)
+    network_type = Field(name=constant.NETWORK_TYPE, default=constant.MANUAL)
+
+
+class StaticNetwork(Subnetwork):
+
+    """Model that contains information regarding a static subnetwork."""
+
+    ip_address = Field(name=constant.IP_ADDRESS)
+    ip_version = Field(name=constant.IP_VERSION)
+    netmask = Field(name=constant.NETMASK)
+    gateway = Field(name=constant.GATEWAY)
+    broadcast = Field(name=constant.BROADCAST)
+    dns = Field(name=constant.DNS, default=[])
+    priority = Field(name=constant.PRIORITY, default=0)
+    network_type = Field(name=constant.NETWORK_TYPE, default=constant.STATIC)
+
+
+class Route(Model):
+
+    """Model that contains information regarding a route."""
+
+    route_id = Field(name=constant.ROUTE_ID,
+                     default=lambda: str(uuid.uuid1()))
+    network = Field(name=constant.NETWORK)
+    netmask = Field(name=constant.NETMASK)
+    gateway = Field(name=constant.GATEWAY)
+    assigned_to = Field(name=constant.ASSIGNED_TO)
