@@ -25,8 +25,8 @@ import six
 
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.osutils import factory as osutils_factory
+from cloudbaseinit.utils import debiface
 from cloudbaseinit.utils import encoding
-
 
 LOG = oslo_logging.getLogger(__name__)
 
@@ -232,19 +232,19 @@ class OpenNebulaService(base.BaseMetadataService):
                     netmask = self._calculate_netmask(address, gateway)
                 broadcast = self._compute_broadcast(address, netmask)
                 # gather them as namedtuple objects
-                details = base.NetworkDetails(
-                    name=IF_FORMAT.format(iid=iid),
-                    mac=mac,
-                    address=address,
-                    address6=None,
-                    netmask=netmask,
-                    netmask6=None,
-                    broadcast=broadcast,
-                    gateway=gateway,
-                    gateway6=None,
-                    dnsnameservers=self._get_cache_data(
+                details = {
+                    debiface.NAME: IF_FORMAT.format(iid=iid),
+                    debiface.MAC: mac,
+                    debiface.ADDRESS: address,
+                    debiface.ADDRESS6: None,
+                    debiface.NETMASK: netmask,
+                    debiface.NETMASK6: None,
+                    debiface.BROADCAST: broadcast,
+                    debiface.GATEWAY: gateway,
+                    debiface.GATEWAY6: None,
+                    debiface.DNSNS: self._get_cache_data(
                         DNSNS, iid=iid, decode=True).split(" ")
-                )
+                }
             except base.NotExistingMetadataException:
                 LOG.debug("Incomplete NIC details")
             else:

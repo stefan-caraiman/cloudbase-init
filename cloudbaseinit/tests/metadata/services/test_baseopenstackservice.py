@@ -26,11 +26,10 @@ from cloudbaseinit import conf as cloudbaseinit_conf
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.metadata.services import baseopenstackservice
 from cloudbaseinit.tests.metadata import fake_json_response
+from cloudbaseinit.utils import debiface
 from cloudbaseinit.utils import x509constants
 
-
 CONF = cloudbaseinit_conf.CONF
-
 MODPATH = "cloudbaseinit.metadata.services.baseopenstackservice"
 
 
@@ -217,30 +216,30 @@ class TestBaseOpenStackService(unittest.TestCase):
             self.assertIsNone(ret)
             return
         # check returned NICs details
-        nic0 = base.NetworkDetails(
-            fake_json_response.NAME0,
-            fake_json_response.MAC0.upper(),
-            fake_json_response.ADDRESS0,
-            fake_json_response.ADDRESS60,
-            fake_json_response.NETMASK0,
-            fake_json_response.NETMASK60,
-            fake_json_response.BROADCAST0,
-            fake_json_response.GATEWAY0,
-            fake_json_response.GATEWAY60,
-            fake_json_response.DNSNS0.split()
-        )
-        nic1 = base.NetworkDetails(
-            fake_json_response.NAME1,
-            None,
-            fake_json_response.ADDRESS1,
-            fake_json_response.ADDRESS61,
-            fake_json_response.NETMASK1,
-            fake_json_response.NETMASK61,
-            fake_json_response.BROADCAST1,
-            fake_json_response.GATEWAY1,
-            fake_json_response.GATEWAY61,
-            None
-        )
+        nic0 = {
+            debiface.NAME: fake_json_response.NAME0,
+            debiface.MAC: fake_json_response.MAC0.upper(),
+            debiface.ADDRESS: fake_json_response.ADDRESS0,
+            debiface.ADDRESS6: fake_json_response.ADDRESS60,
+            debiface.NETMASK: fake_json_response.NETMASK0,
+            debiface.NETMASK6: fake_json_response.NETMASK60,
+            debiface.BROADCAST: fake_json_response.BROADCAST0,
+            debiface.GATEWAY: fake_json_response.GATEWAY0,
+            debiface.GATEWAY6: fake_json_response.GATEWAY60,
+            debiface.DNSNS: fake_json_response.DNSNS0.split()
+        }
+        nic1 = {
+            debiface.NAME: fake_json_response.NAME1,
+            debiface.MAC: None,
+            debiface.ADDRESS: fake_json_response.ADDRESS1,
+            debiface.ADDRESS6: fake_json_response.ADDRESS61,
+            debiface.NETMASK: fake_json_response.NETMASK1,
+            debiface.NETMASK6: fake_json_response.NETMASK61,
+            debiface.BROADCAST: fake_json_response.BROADCAST1,
+            debiface.GATEWAY: fake_json_response.GATEWAY1,
+            debiface.GATEWAY6: fake_json_response.GATEWAY61,
+            debiface.DNSNS: None
+        }
         self.assertEqual([nic0, nic1], ret)
 
     def test_get_network_details_no_config(self):
