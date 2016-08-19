@@ -13,7 +13,6 @@
 #    under the License.
 
 
-import functools
 import posixpath
 import unittest
 
@@ -23,10 +22,14 @@ except ImportError:
     import mock
 from oslo_config import cfg
 
+
+from cloudbaseinit import constants
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.metadata.services import baseopenstackservice
 from cloudbaseinit.tests.metadata import fake_json_response
+from cloudbaseinit.tests import testutils
 from cloudbaseinit.utils import debiface
+from cloudbaseinit.utils import network as network_utils
 from cloudbaseinit.utils import x509constants
 
 CONF = cfg.CONF
@@ -51,11 +54,48 @@ class TestBaseOpenStackService(unittest.TestCase):
         self._fake_content = self._fake_network_config["debian_config"]
         self._fake_public_keys = fake_metadata["public_keys"]
         self._fake_keys = fake_metadata["keys"]
-        self._partial_test_get_network_details = functools.partial(
-            self._test_get_network_details,
-            network_config=self._fake_network_config,
-            content=self._fake_content
-        )
+        self._fake_links = {
+            fake_json_response.NAME0: {
+                constants.NAME: fake_json_response.NAME0,
+                constants.MAC_ADDRESS: fake_json_response.MAC0.upper()
+            },
+            fake_json_response.NAME1: {
+                constants.NAME: fake_json_response.NAME1,
+                constants.MAC_ADDRESS: None
+            },
+        }
+        self._fake_networks = {}
+        networks = [
+            {
+                constants.IP_ADDRESS: fake_json_response.ADDRESS0,
+                constants.NETMASK: fake_json_response.NETMASK0,
+                constants.BROADCAST: fake_json_response.BROADCAST0,
+                constants.GATEWAY: fake_json_response.GATEWAY0,
+                constants.DNS: fake_json_response.DNSNS0.split()
+            },
+            {
+                constants.IP_ADDRESS: fake_json_response.ADDRESS60,
+                constants.NETMASK: fake_json_response.NETMASK60,
+                constants.GATEWAY: fake_json_response.GATEWAY60,
+            },
+            {
+                constants.IP_ADDRESS: fake_json_response.ADDRESS1,
+                constants.BROADCAST: fake_json_response.BROADCAST1,
+                constants.GATEWAY: fake_json_response.GATEWAY1,
+                constants.NETMASK: fake_json_response.NETMASK1,
+                constants.DNS: None
+            },
+            {
+                constants.IP_ADDRESS: fake_json_response.ADDRESS61,
+                constants.NETMASK: fake_json_response.NETMASK61,
+                constants.GATEWAY: fake_json_response.GATEWAY61,
+            },
+        ]
+        for network in networks:
+            network.update(network_utils.process_interface(
+                ip_address=network[constants.IP_ADDRESS],
+                netmask=network.get(constants.NETMASK, None)))
+            self._fake_networks[network[constants.IP_ADDRESS]] = network
 
     @mock.patch(MODPATH +
                 ".BaseOpenStackService._get_cache_data")
@@ -187,80 +227,78 @@ class TestBaseOpenStackService(unittest.TestCase):
         self._test_get_client_auth_certs(
             meta_data={}, ret_value=base.NotExistingMetadataException)
 
+    @mock.patch("cloudbaseinit.osutils.factory.get_os_utils")
     @mock.patch(MODPATH +
                 ".BaseOpenStackService.get_content")
     @mock.patch(MODPATH +
                 ".BaseOpenStackService._get_meta_data")
-    def _test_get_network_details(self,
-                                  mock_get_meta_data,
-                                  mock_get_content,
-                                  network_config=None,
-                                  content=None,
-                                  search_fail=False,
-                                  no_path=False):
-        # mock obtained data
+    def _test_get_network_details_builder(self, mock_get_meta_data,
+                                          mock_get_content,
+                                          mock_osutils,
+                                          network_config=None,
+                                          search_fail=False):
         mock_get_meta_data().get.return_value = network_config
-        mock_get_content.return_value = content
-        # actual tests
-        if search_fail:
-            ret = self._service.get_network_details()
-            self.assertFalse(ret)
+        if not network_config or search_fail:
+            result = self._service._get_network_details_builder()
+            self.assertIsNone(result)
             return
-        ret = self._service.get_network_details()
-        mock_get_meta_data().get.assert_called_once_with("network_config")
-        if network_config and not no_path:
-            mock_get_content.assert_called_once_with("network")
-        if not network_config:
-            self.assertIsNone(ret)
-            return
-        if no_path:
-            self.assertIsNone(ret)
-            return
-        # check returned NICs details
-        nic0 = {
-            debiface.NAME: fake_json_response.NAME0,
-            debiface.MAC: fake_json_response.MAC0.upper(),
-            debiface.ADDRESS: fake_json_response.ADDRESS0,
+        if not self._service._network_details_builder:
+            result = self._service._get_network_details_builder()
+            self.assertIsInstance(result,
+                                  baseopenstackservice._NetworkDetailsBuilder)
+
+    def test_get_network_details_builder_no_config(self):
+        self._test_get_network_details_builder()
+
+    def test_get_network_details_builder_no_path(self):
+        self._test_get_network_details_builder(network_config="fake_config",
+                                               search_fail=True)
+
+    def test_get_network_details_builder(self):
+        network_config = {"content_path": "fake_content"}
+        self._test_get_network_details_builder(network_config=network_config)
+
+
+class Test_NetworkDetailsBuilder(unittest.TestCase):
+
+    def setUp(self):
+        date = "2013-04-04"
+        fake_metadata = fake_json_response.get_fake_metadata_json(date)
+        self._fake_network_config = fake_metadata["network_config"]
+        self._fake_content = self._fake_network_config["debian_config"]
+        self._builder = baseopenstackservice._NetworkDetailsBuilder(
+            service=baseopenstackservice.BaseOpenStackService,
+            content=self._fake_content)
+        self.mock_raw_data = {
+            constants.ID: mock.sentinel.id,
             debiface.ADDRESS6: fake_json_response.ADDRESS60,
-            debiface.NETMASK: fake_json_response.NETMASK0,
             debiface.NETMASK6: fake_json_response.NETMASK60,
-            debiface.BROADCAST: fake_json_response.BROADCAST0,
-            debiface.GATEWAY: fake_json_response.GATEWAY0,
             debiface.GATEWAY6: fake_json_response.GATEWAY60,
-            debiface.DNSNS: fake_json_response.DNSNS0.split()
+            constants.ASSIGNED_TO: mock.sentinel.assigned_to
         }
-        nic1 = {
-            debiface.NAME: fake_json_response.NAME1,
-            debiface.MAC: None,
-            debiface.ADDRESS: fake_json_response.ADDRESS1,
-            debiface.ADDRESS6: fake_json_response.ADDRESS61,
-            debiface.NETMASK: fake_json_response.NETMASK1,
-            debiface.NETMASK6: fake_json_response.NETMASK61,
-            debiface.BROADCAST: fake_json_response.BROADCAST1,
-            debiface.GATEWAY: fake_json_response.GATEWAY1,
-            debiface.GATEWAY6: fake_json_response.GATEWAY61,
-            debiface.DNSNS: None
-        }
-        self.assertEqual([nic0, nic1], ret)
 
-    def test_get_network_details_no_config(self):
-        self._partial_test_get_network_details(
-            network_config=None
-        )
+    def test_process_link_networks(self):
+        link = {constants.ID: mock.sentinel.id}
+        res = self._builder._process_link_networks(link,
+                                                   self.mock_raw_data)
+        self.assertTrue(res)
 
-    def test_get_network_details_no_path(self):
-        self._fake_network_config.pop("content_path", None)
-        self._partial_test_get_network_details(
-            network_config=self._fake_network_config,
-            no_path=True
-        )
+    def test_process(self):
+        self._builder._process()
+        self.assertIsNotNone(self._builder._links)
 
-    def test_get_network_details_search_fail(self):
-        self._fake_content = "invalid format"
-        self._partial_test_get_network_details(
-            content=self._fake_content,
-            search_fail=True
-        )
+    @mock.patch("cloudbaseinit.metadata.services.basenetworkservice."
+                "NetworkDetailsBuilder._get_fields")
+    def test_process_invalid(self, mock_get_fields):
+        mock_get_fields.return_value = None
+        with testutils.LogSnatcher('cloudbaseinit.metadata.services'
+                                   '.baseopenstackservice'):
+            self._builder._process()
 
-    def test_get_network_details(self):
-        self._partial_test_get_network_details()
+    @mock.patch("cloudbaseinit.utils.debiface.parse")
+    def test_process_not_all_fields(self, mock_debiface):
+        expected_output = []
+        with testutils.LogSnatcher('cloudbaseinit.metadata.services'
+                                   '.baseopenstackservice') as snatcher:
+            self._builder._process()
+        self.assertEqual(expected_output, snatcher.output)
