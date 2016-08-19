@@ -13,7 +13,6 @@
 #    under the License.
 
 
-import re
 import textwrap
 import unittest
 
@@ -22,10 +21,11 @@ try:
 except ImportError:
     import mock
 
+from cloudbaseinit import constants
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.metadata.services import opennebulaservice
+from cloudbaseinit.tests.metadata import fake_json_response
 from cloudbaseinit.tests import testutils
-from cloudbaseinit.utils import debiface
 
 
 MAC = "54:EE:75:19:F4:61"    # output must be upper
@@ -104,26 +104,34 @@ ETH1_MAC='{mac}'
 OPEN = mock.mock_open(read_data=CONTEXT.encode())
 
 
-def _get_nic_details(iid=0):
-        details = {
-            debiface.NAME: opennebulaservice.IF_FORMAT.format(iid=iid),
-            debiface.MAC: MAC,
-            debiface.ADDRESS: ADDRESS,
-            debiface.ADDRESS6: None,
-            debiface.NETMASK: NETMASK,
-            debiface.NETMASK6: None,
-            debiface.BROADCAST: BROADCAST,
-            debiface.GATEWAY: GATEWAY,
-            debiface.GATEWAY6: None,
-            debiface.DNSNS: DNSNS.split(" ")
-        }
-        return details
-
-
 class _TestOpenNebulaService(unittest.TestCase):
 
     def setUp(self):
         self._service = opennebulaservice.OpenNebulaService()
+
+
+class FakeOpenNebulaService(opennebulaservice.OpenNebulaService):
+
+    @mock.patch("cloudbaseinit.osutils.factory.get_os_utils")
+    def __init__(self, mock_get_os_utils):
+        mock_osutils = mock.MagicMock()
+        mock_get_os_utils.return_value = mock_osutils
+        super(FakeOpenNebulaService, self).__init__()
+
+    def load_context(self, context=CONTEXT):
+        self._raw_content = context.encode()
+        vardict = self._parse_shell_variables(
+            self._raw_content
+        )
+        self._dict_content = vardict
+
+
+class Fake_NetworkDetailsBuilder(opennebulaservice._NetworkDetailsBuilder):
+
+    @mock.patch("cloudbaseinit.osutils.factory.get_os_utils")
+    def __init__(self, _):
+        super(Fake_NetworkDetailsBuilder,
+              self).__init__(service=opennebulaservice.OpenNebulaService())
 
 
 @mock.patch("six.moves.builtins.open", new=OPEN)
@@ -132,6 +140,9 @@ class TestOpenNebulaService(_TestOpenNebulaService):
     @classmethod
     def setUpClass(cls):
         OPEN.return_value.read.return_value = CONTEXT.encode()
+
+    def test_content(self):
+        self.assertEqual(self._service.content, {})
 
     def _test_parse_shell_variables(self, crlf=False, comment=False):
         content = textwrap.dedent("""
@@ -173,24 +184,6 @@ class TestOpenNebulaService(_TestOpenNebulaService):
                 (True, False),
                 (False, True)):
             self._test_parse_shell_variables(crlf=crlf, comment=comment)
-
-    def test_calculate_netmask(self):
-        address, gateway, _netmask = (
-            "192.168.0.10",
-            "192.168.1.1",
-            "255.255.0.0"
-        )
-        netmask = self._service._calculate_netmask(address, gateway)
-        self.assertEqual(_netmask, netmask)
-
-    def test_compute_broadcast(self):
-        address, netmask, _broadcast = (
-            "192.168.0.10",
-            "255.255.0.0",
-            "192.168.255.255"
-        )
-        broadcast = self._service._compute_broadcast(address, netmask)
-        self.assertEqual(_broadcast, broadcast)
 
     @mock.patch("cloudbaseinit.metadata.services"
                 ".opennebulaservice.os.path")
@@ -265,18 +258,12 @@ class TestOpenNebulaService(_TestOpenNebulaService):
         self.assertEqual(ADDRESS, ret)
 
 
-class TestLoadedOpenNebulaService(_TestOpenNebulaService):
+class TestLoadedOpenNebulaService(unittest.TestCase):
 
     def setUp(self):
-        super(TestLoadedOpenNebulaService, self).setUp()
-        self.load_context()
-
-    def load_context(self, context=CONTEXT):
-        self._service._raw_content = context.encode()
-        vardict = self._service._parse_shell_variables(
-            self._service._raw_content
-        )
-        self._service._dict_content = vardict
+        self._service = FakeOpenNebulaService()
+        self._service.load_context()
+        self.load_context = self._service.load_context
 
     def test_get_cache_data(self):
         names = ["smt"]
@@ -310,28 +297,131 @@ class TestLoadedOpenNebulaService(_TestOpenNebulaService):
             self._service.get_public_keys()
         )
 
-    def _test_get_network_details(self, netmask=True):
-        if not netmask:
-            context = re.sub(r"ETH0_MASK='(\d+\.){3}\d+'", "", CONTEXT)
-            self.load_context(context=context)
-        details = _get_nic_details()
-        self.assertEqual(
-            [details],
-            self._service.get_network_details()
+    @mock.patch("cloudbaseinit.osutils.factory.get_os_utils")
+    def test_get_network_details_builder(self, mock_get_os_utils):
+        self.assertIsInstance(self._service._get_network_details_builder(),
+                              opennebulaservice._NetworkDetailsBuilder)
+
+
+class Test_NetworkDetailsBuilder(unittest.TestCase):
+
+    def setUp(self):
+        self._builder = Fake_NetworkDetailsBuilder()
+
+    def test_calculate_netmask(self):
+        address, gateway, _netmask = (
+            "192.168.0.10",
+            "192.168.1.1",
+            "255.255.0.0"
         )
+        netmask = self._builder._calculate_netmask(address, gateway)
+        self.assertEqual(_netmask, netmask)
 
-    def test_get_network_details(self):
-        self._test_get_network_details(netmask=True)
+    def test_get_cache_data_exception(self):
+        names = ["smt"]
+        with self.assertRaises(base.NotExistingMetadataException):
+            self._builder._get_cache_data(names)
 
-    def test_get_network_details_predict(self):
-        self._test_get_network_details(netmask=False)
+    @mock.patch('cloudbaseinit.metadata.services.opennebulaservice.'
+                'OpenNebulaService._get_cache_data')
+    def test_get_cache_data(self, mock_service_get_cache):
+        names = ["smt"]
+        mock_service_get_cache.return_value = ADDRESS
+        names.append(opennebulaservice.ADDRESS[0])
+        ret = self._builder._get_cache_data(names, iid=0)
+        self.assertEqual(ADDRESS, ret)
 
-    def test_multiple_nics(self):
-        self.load_context(context=CONTEXT2)
-        nic0 = _get_nic_details(iid=0)
-        nic1 = _get_nic_details(iid=1)
-        network_details = [nic0, nic1]
-        self.assertEqual(
-            network_details,
-            self._service.get_network_details()
-        )
+    @mock.patch('cloudbaseinit.metadata.services.opennebulaservice.'
+                '_NetworkDetailsBuilder._calculate_netmask')
+    @mock.patch('cloudbaseinit.metadata.services.opennebulaservice.'
+                '_NetworkDetailsBuilder._get_cache_data')
+    def _test_process_network(self, mock_get_cache_data,
+                              mock_calculate_netmask,
+                              last_get_cache_call=fake_json_response.NETMASK0,
+                              gateway_set=True):
+        gateway = fake_json_response.GATEWAY0 if gateway_set else None
+        mock_get_cache_data.side_effect = [fake_json_response.ADDRESS0,
+                                           gateway,
+                                           fake_json_response.DNSNS0,
+                                           last_get_cache_call]
+        mock_link = mock_name = mock.MagicMock()
+        mock_link.return_value = {}
+        if last_get_cache_call is base.NotExistingMetadataException:
+            if gateway_set:
+                res = self._builder._process_network(mock_link, mock_name)
+                self.assertTrue(res)
+                self.assertEqual(mock_get_cache_data.call_count, 4)
+            else:
+                res = self._builder._process_network(mock_link, mock_name)
+                self.assertFalse(res)
+                self.assertEqual(mock_get_cache_data.call_count, 4)
+        else:
+            with mock.patch("cloudbaseinit.metadata.services."
+                            "basenetworkservice.NetworkDetailsBuilder."
+                            "_get_fields") as mock_fields:
+                mock_fields.return_value = None
+                res = self._builder._process_network(mock_link, mock_name)
+                self.assertFalse(res)
+
+    def test_process_network_no_field(self):
+        self._test_process_network()
+
+    def test_process_network_netmask_error(self):
+        last_call = base.NotExistingMetadataException
+        self._test_process_network(last_get_cache_call=last_call)
+
+    def test_process_network_incomplete(self):
+        last_call = base.NotExistingMetadataException
+        self._test_process_network(last_get_cache_call=last_call,
+                                   gateway_set=False)
+
+    @mock.patch('cloudbaseinit.metadata.services.opennebulaservice.'
+                '_NetworkDetailsBuilder._get_cache_data')
+    def test_process_no_network_information(self, mock_get_cache_data):
+        cache_response = base.NotExistingMetadataException
+        name = opennebulaservice.IF_FORMAT.format(iid=0)
+        expected_output = ["Discover network information for '{}'".
+                           format(name),
+                           "No network information available for '{}'".
+                           format(name)]
+        if cache_response is base.NotExistingMetadataException:
+            mock_get_cache_data.side_effect = cache_response
+            with testutils.LogSnatcher('cloudbaseinit.metadata.services.'
+                                       'opennebulaservice') as snatcher:
+                result = self._builder._process()
+            self.assertIsNone(result)
+            self.assertEqual(snatcher.output, expected_output)
+
+    @mock.patch('cloudbaseinit.metadata.services.basenetworkservice.'
+                'NetworkDetailsBuilder._get_fields')
+    @mock.patch('cloudbaseinit.metadata.services.opennebulaservice.'
+                '_NetworkDetailsBuilder._get_cache_data')
+    def test_process_not_all_required_files(self, mock_get_cache_data,
+                                            mock_get_fields):
+        fake_mac = "fake_mac"
+        name = opennebulaservice.IF_FORMAT.format(iid=0)
+        mock_get_cache_data.side_effect = [fake_mac,
+                                           base.NotExistingMetadataException]
+        mock_get_fields.return_value = None
+        raw_link = {
+            constants.NAME: name,
+            constants.MAC_ADDRESS: fake_mac.upper(),
+        }
+        expected_output = ["Discover network information for '{}'".
+                           format(name),
+                           "{} does not contains all the required fields.".
+                           format(raw_link)]
+        with testutils.LogSnatcher('cloudbaseinit.metadata.services.'
+                                   'opennebulaservice') as snatcher:
+            self._builder._process()
+        self.assertEqual(snatcher.output[:2], expected_output)
+
+    @mock.patch('cloudbaseinit.metadata.services.opennebulaservice.'
+                '_NetworkDetailsBuilder._process_network')
+    @mock.patch('cloudbaseinit.metadata.services.opennebulaservice.'
+                '_NetworkDetailsBuilder._get_cache_data')
+    def test_process(self, mock_get_cache_data, mock_process_network):
+        mock_get_cache_data.side_effect = ['fake_mac',
+                                           base.NotExistingMetadataException]
+        result = self._builder._process()
+        self.assertIsNone(result)
