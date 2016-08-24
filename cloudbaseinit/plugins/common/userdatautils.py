@@ -43,6 +43,9 @@ def _get_command(data):
         if pattern.search(data):
             return command_class.from_data(data)
 
+def check_new_lines():
+    pass
+
 
 def execute_user_data_script(user_data):
     ret_val = 0
