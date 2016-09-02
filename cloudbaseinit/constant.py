@@ -15,16 +15,20 @@
 # Network types
 IPV4 = 4
 IPV6 = 6
+IPV4_DHCP = "ipv4_dhcp"
+IPV6_DHCP = "ipv6_dhcp"
 
 # Different types of interfaces
 PHY = "phy"
 BOND = "bond"
+OVS = "ovs"
 VIF = "vif"
 VLAN = "vlan"
 
 # Different types of subnetworks
 STATIC = "static"
 MANUAL = "manual"
+DHCP = "dhcp"
 
 # Field names related to network configuration
 ASSIGNED_TO = "assigned_to"
