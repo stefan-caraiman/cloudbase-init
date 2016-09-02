@@ -12,20 +12,126 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import json
+
 from oslo_log import log as oslo_logging
 from six.moves.urllib import error
 
 from cloudbaseinit import conf as cloudbaseinit_conf
+from cloudbaseinit import constant
 from cloudbaseinit.metadata.services import base
-from cloudbaseinit.metadata.services import baseopenstackservice as baseos
-from cloudbaseinit.utils import network
+from cloudbaseinit.metadata.services import basenetworkservice as service_base
+from cloudbaseinit.metadata.services import baseopenstackservice
+from cloudbaseinit.utils import encoding
+from cloudbaseinit.utils import network as network_utils
 
 CONF = cloudbaseinit_conf.CONF
 LOG = oslo_logging.getLogger(__name__)
 
 
-class HttpService(base.BaseHTTPMetadataService, baseos.BaseOpenStackService):
+class _NetworkDetailsBuilder(service_base.NetworkDetailsBuilder):
+
+    """OpenStack HTTP Service network details builder."""
+
+    _ASSIGNED_TO = "link"
+    _MAC_ADDRESS = "ethernet_mac_address"
+    _NAME = "id"
+    _VERSION = "type"
+    _LINKS = "links"
+    _NETWORKS = "networks"
+    _ROUTES = "routes"
+    _IPV4 = "ipv4"
+    _PRIORITY = {
+        constant.PHY: 0,
+        constant.BOND: 10,
+        constant.VIF: 20,
+        constant.VLAN: 30,
+    }
+
+    def __init__(self, service, network_data):
+        super(_NetworkDetailsBuilder, self).__init__(service)
+        self._network_data = network_data
+        self._invalid_links = []
+
+        self._link.update({
+            constant.NAME: self._Field(
+                name=constant.NAME, alias=self._NAME),
+            constant.MAC_ADDRESS: self._Field(
+                name=constant.MAC_ADDRESS,
+                alias=[self._MAC_ADDRESS, constant.VLAN_MAC_ADDRESS]),
+        })
+        self._network.update({
+            constant.GATEWAY: self._Field(
+                name=constant.GATEWAY),
+            constant.VERSION: self._Field(
+                name=constant.VERSION, alias=self._VERSION,
+                default=4),
+            constant.ASSIGNED_TO: self._Field(
+                name=constant.ASSIGNED_TO, alias=self._ASSIGNED_TO),
+        })
+
+    def _process_raw_networks(self):
+        """Process the information related to networks."""
+        network_data = self._network_data.get(self._NETWORKS, [])
+        if not network_data:
+            LOG.warning("No information regarding networks available.")
+            return
+
+        for raw_network in network_data:
+            network = self._get_fields(self._network.values(), raw_network)
+            if network:
+                if network[constant.VERSION] == self._IPV4:
+                    network[constant.VERSION] = constant.IPV4
+                else:
+                    network[constant.VERSION] = constant.IPV6
+                    network[constant.PRIORITY] = 10
+                self._networks[network[constant.ID]] = network
+            else:
+                LOG.warning("The network %r does not contains all the "
+                            "required fields.", raw_network)
+                continue
+
+            if network[constant.ASSIGNED_TO] in self._invalid_links:
+                self._invalid_links.remove(network[constant.ASSIGNED_TO])
+
+            for raw_route in raw_network.get(self._ROUTES, []):
+                raw_route[constant.ASSIGNED_TO] = network[constant.ID]
+                route = self._get_fields(self._route.values(), raw_route)
+                if route:
+                    self._routes[route[constant.ID]] = route
+                else:
+                    LOG.warning("The route %r does not contain all the "
+                                "required fields.", raw_route)
+
+    def _process(self):
+        """Digest the received network information."""
+        for raw_link in self._network_data.get(self._LINKS, []):
+            link = self._get_fields(self._link.values(), raw_link)
+            if link:
+                priority = self._PRIORITY.get(link[constant.TYPE], None)
+                if priority is None:
+                    LOG.debug("No priority available for %r (using: 0)",
+                              link[constant.TYPE])
+                    priority = 0
+                link[constant.PRIORITY] = priority
+                self._links[link[constant.ID]] = link
+            else:
+                LOG.warning("The link %r does not contain all the required "
+                            "fields.", raw_link)
+
+        self._invalid_links = list(self._links.keys())
+        self._process_raw_networks()
+        while self._invalid_links:
+            invalid_link = self._invalid_links.pop()
+            LOG.debug("The link %r does not contain any network.",
+                      invalid_link)
+
+
+class HttpService(base.BaseHTTPMetadataService,
+                  baseopenstackservice.BaseOpenStackService):
+
     _POST_PASSWORD_MD_VER = '2013-04-04'
+    _NETWORK_DATA_JSON = "openstack/latest/metadata/network_data.json"
 
     def __init__(self):
         super(HttpService, self).__init__(
@@ -37,8 +143,7 @@ class HttpService(base.BaseHTTPMetadataService, baseos.BaseOpenStackService):
     def load(self):
         super(HttpService, self).load()
         if CONF.openstack.add_metadata_private_ip_route:
-            network.check_metadata_ip_route(CONF.openstack.metadata_base_url)
-
+            network_utils.check_metadata_ip_route(self._base_url)
         try:
             self._get_meta_data()
             return True
@@ -78,3 +183,28 @@ class HttpService(base.BaseHTTPMetadataService, baseos.BaseOpenStackService):
                 return False
             else:
                 raise
+
+    def _get_network_details_builder(self):
+        """Get the required `NetworkDetailsBuilder` object.
+
+        The `NetworkDetailsBuilder` is used in order to create the
+        `NetworkDetails` object using the network related information
+        exposed by the current metadata provider.
+        """
+        if not self._network_details_builder:
+            network_data = None
+            try:
+                data = self._get_data(self._NETWORK_DATA_JSON)
+                network_data = json.loads(encoding.get_as_string(data))
+            except base.NotExistingMetadataException:
+                LOG.debug("JSON network metadata not found.")
+            except ValueError as exc:
+                LOG.error("Failed to load json data: %r" % exc)
+            else:
+                self._network_details_builder = _NetworkDetailsBuilder(
+                    service=self, network_data=network_data)
+
+            if not network_data:
+                super(HttpService, self)._get_network_details_builder()
+
+        return self._network_details_builder
