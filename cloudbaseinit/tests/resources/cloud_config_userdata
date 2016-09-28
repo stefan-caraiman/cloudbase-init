@@ -7,6 +7,18 @@ MIME-Version: 1.0
 Content-Transfer-Encoding: 7bit
 Content-Disposition: attachment; filename="cloud-config"
 
+
+users:
+-   name: barfoo
+    gecos: barfoo
+    expiredate: 2012-09-01
+    passwd: FakePass
+    groups: users, admin
+    primary-group: Administrators
+    inactive: true
+    ssh-authorized-keys:
+      -   ssh-rsa fake_key
+
 write_files:
 -   encoding: b64
     content: NDI=
