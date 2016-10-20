@@ -141,6 +141,8 @@ class GlobalOptions(conf_base.Options):
                     'cloudbaseinit.metadata.services.cloudstack.CloudStack',
                     'cloudbaseinit.metadata.services'
                     '.opennebulaservice.OpenNebulaService',
+                    'cloudbaseinit.metadata.services.'
+                    'bigstepservice.BigstepService',
                 ],
                 help='List of enabled metadata service classes, '
                      'to be tested for availability in the provided order. '
