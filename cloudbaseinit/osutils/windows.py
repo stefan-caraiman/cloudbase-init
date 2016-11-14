@@ -387,12 +387,20 @@ class WindowsUtils(base.BaseOSUtils):
         return sid, domainName.value
 
     def add_user_to_local_group(self, username, groupname):
-
+        LOG.debug("username is: %s" % username)
+        LOG.debug("groupname is: %s" % groupname)
         lmi = Win32_LOCALGROUP_MEMBERS_INFO_3()
+        LOG.debug(lmi.lgrmi3_domainandname)
         lmi.lgrmi3_domainandname = six.text_type(username)
-
-        ret_val = netapi32.NetLocalGroupAddMembers(0, six.text_type(groupname),
-                                                   3, ctypes.addressof(lmi), 1)
+        LOG.debug(lmi)
+        LOG.debug(lmi.lgrmi3_domainandname)
+        try:
+            ret_val = netapi32.NetLocalGroupAddMembers(None, six.text_type(groupname),
+                                                       3, ctypes.addressof(lmi), 1)
+        except Exception as e:
+            LOG.debug(e)
+        finally:
+            LOG.debug("Addres of lmi is: %s :"  % ctypes.addressof(lmi))
 
         if ret_val == self.NERR_GroupNotFound:
             raise exception.CloudbaseInitException('Group not found')
