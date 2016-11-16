@@ -301,58 +301,25 @@ class TestWindowsUtils(testutils.CloudbaseInitTestBase):
     def test_get_user_sid_and_domain_no_return_value(self):
         self._test_get_user_sid_and_domain(ret_val=None, last_error=100)
 
-    @mock.patch('cloudbaseinit.osutils.windows'
-                '.Win32_LOCALGROUP_MEMBERS_INFO_3')
-    def _test_add_user_to_local_group(self,
-                                      mock_Win32_LOCALGROUP_MEMBERS_INFO_3,
-                                      ret_value):
-        lmi = mock_Win32_LOCALGROUP_MEMBERS_INFO_3()
-        group_name = 'Admins'
-        netapi32 = self._windll_mock.netapi32
-
-        netapi32.NetLocalGroupAddMembers.return_value = ret_value
-
-        is_in_alias = ret_value != self._winutils.ERROR_MEMBER_IN_ALIAS
-
-        if ret_value is not 0 and is_in_alias:
-            self.assertRaises(
-                exception.CloudbaseInitException,
-                self._winutils.add_user_to_local_group,
-                self._USERNAME, group_name)
-        else:
-            self._winutils.add_user_to_local_group(self._USERNAME,
-                                                   group_name)
-
-            netapi32.NetLocalGroupAddMembers.assert_called_with(
-                0, six.text_type(group_name), 3,
-                self._ctypes_mock.addressof.return_value, 1)
-
-            self._ctypes_mock.addressof.assert_called_once_with(lmi)
-            self.assertEqual(lmi.lgrmi3_domainandname,
-                             six.text_type(self._USERNAME))
+    def _test_add_user_to_local_group(self, fail=False):
+        groupname = "fake-group"
+        if fail:
+            self._win32net_mock.NetLocalGroupAddMembers.side_effect = [
+                self._win32net_mock.error(*([mock.Mock()] * 3))]
+            with self.assertRaises(exception.CloudbaseInitException):
+                self._winutils.add_user_to_local_group(self._USERNAME,
+                                                       groupname)
+            return
+        self._winutils.add_user_to_local_group(self._USERNAME, groupname)
+        group_info = {'domainandname': self._USERNAME}
+        self._win32net_mock.NetLocalGroupAddMembers.assert_called_once_with(
+            None, groupname, 3, [group_info])
 
     def test_add_user_to_local_group_no_error(self):
-        self._test_add_user_to_local_group(ret_value=0)
+        self._test_add_user_to_local_group()
 
     def test_add_user_to_local_group_not_found(self):
-        self._test_add_user_to_local_group(
-            ret_value=self._winutils.NERR_GroupNotFound)
-
-    def test_add_user_to_local_group_access_denied(self):
-        self._test_add_user_to_local_group(
-            ret_value=self._winutils.ERROR_ACCESS_DENIED)
-
-    def test_add_user_to_local_group_no_member(self):
-        self._test_add_user_to_local_group(
-            ret_value=self._winutils.ERROR_NO_SUCH_MEMBER)
-
-    def test_add_user_to_local_group_member_in_alias(self):
-        self._test_add_user_to_local_group(
-            ret_value=self._winutils.ERROR_MEMBER_IN_ALIAS)
-
-    def test_add_user_to_local_group_invalid_member(self):
-        self._test_add_user_to_local_group(
-            ret_value=self._winutils.ERROR_INVALID_MEMBER)
+        self._test_add_user_to_local_group(fail=True)
 
     @mock.patch('cloudbaseinit.osutils.windows.WindowsUtils'
                 '._get_user_info')

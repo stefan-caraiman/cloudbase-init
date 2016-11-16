@@ -36,6 +36,7 @@ import wmi
 
 from cloudbaseinit import exception
 from cloudbaseinit.osutils import base
+from cloudbaseinit.utils import encoding
 from cloudbaseinit.utils.windows import disk
 from cloudbaseinit.utils.windows import network
 from cloudbaseinit.utils.windows import privilege
@@ -50,7 +51,6 @@ PREFERRED_ADDR = 4
 
 advapi32 = ctypes.windll.advapi32
 kernel32 = ctypes.windll.kernel32
-netapi32 = ctypes.windll.netapi32
 userenv = ctypes.windll.userenv
 iphlpapi = ctypes.windll.iphlpapi
 Ws2_32 = ctypes.windll.Ws2_32
@@ -69,12 +69,6 @@ class Win32_PROFILEINFO(ctypes.Structure):
         ('lpServerName', wintypes.LPWSTR),
         ('lpPolicyPath', wintypes.LPWSTR),
         ('hprofile', wintypes.HANDLE)
-    ]
-
-
-class Win32_LOCALGROUP_MEMBERS_INFO_3(ctypes.Structure):
-    _fields_ = [
-        ('lgrmi3_domainandname', wintypes.LPWSTR)
     ]
 
 
@@ -238,14 +232,9 @@ GUID_DEVINTERFACE_DISK = disk.GUID(0x53f56307, 0xb6bf, 0x11d0, 0x94, 0xf2,
 
 
 class WindowsUtils(base.BaseOSUtils):
-    NERR_GroupNotFound = 2220
     NERR_UserNotFound = 2221
-    ERROR_ACCESS_DENIED = 5
     ERROR_INSUFFICIENT_BUFFER = 122
     ERROR_NO_DATA = 232
-    ERROR_NO_SUCH_MEMBER = 1387
-    ERROR_MEMBER_IN_ALIAS = 1378
-    ERROR_INVALID_MEMBER = 1388
     ERROR_NO_MORE_FILES = 18
 
     STATUS_REVISION_MISMATCH = 0xC0000059
@@ -386,27 +375,17 @@ class WindowsUtils(base.BaseOSUtils):
 
         return sid, domainName.value
 
-    def add_user_to_local_group(self, username, groupname):
-
-        lmi = Win32_LOCALGROUP_MEMBERS_INFO_3()
-        lmi.lgrmi3_domainandname = six.text_type(username)
-
-        ret_val = netapi32.NetLocalGroupAddMembers(0, six.text_type(groupname),
-                                                   3, ctypes.addressof(lmi), 1)
-
-        if ret_val == self.NERR_GroupNotFound:
-            raise exception.CloudbaseInitException('Group not found')
-        elif ret_val == self.ERROR_ACCESS_DENIED:
-            raise exception.CloudbaseInitException('Access denied')
-        elif ret_val == self.ERROR_NO_SUCH_MEMBER:
-            raise exception.CloudbaseInitException('Username not found')
-        elif ret_val == self.ERROR_MEMBER_IN_ALIAS:
-            # The user is already a member of the group
-            pass
-        elif ret_val == self.ERROR_INVALID_MEMBER:
-            raise exception.CloudbaseInitException('Invalid user')
-        elif ret_val != 0:
-            raise exception.CloudbaseInitException('Unknown error')
+    @staticmethod
+    def add_user_to_local_group(username, groupname):
+        user_group_info = {'domainandname': encoding.get_as_string(username)}
+        groupname = encoding.get_as_string(groupname)
+        try:
+            win32net.NetLocalGroupAddMembers(None, groupname,
+                                             3, [user_group_info])
+        except win32net.error as ex:
+            exc = exception.WindowsCloudbaseInitException
+            raise exc("Failed adding {user} to {group}: {ex}".
+                      format(user=username, group=groupname, ex=ex))
 
     def get_user_sid(self, username):
         try:
