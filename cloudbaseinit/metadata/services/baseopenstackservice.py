@@ -44,6 +44,7 @@ class BaseOpenStackService(base.BaseMetadataService):
         path = posixpath.normpath(
             posixpath.join('openstack', version, 'meta_data.json'))
         data = self._get_cache_data(path, decode=True)
+        LOG.debug("Found data: %s", data)
         if data:
             return json.loads(data)
 

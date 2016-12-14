@@ -90,12 +90,14 @@ class BaseMetadataService(object):
         key = (path, decode)
         if key in self._cache:
             LOG.debug("Using cached copy of metadata: '%s'" % path)
+            LOG.debug("The cache data: '%s'" % self._cache)
             return self._cache[key]
         else:
             data = self._exec_with_retry(lambda: self._get_data(path))
             if decode:
                 data = encoding.get_as_string(data)
             self._cache[key] = data
+            LOG.debug("Found metadata data: %s", data)
             return data
 
     def get_instance_id(self):
@@ -228,6 +230,7 @@ class BaseHTTPMetadataService(BaseMetadataService):
         if not url.startswith("http"):
             url = requests.compat.urljoin(self._base_url, url)
         request_action = requests.get if not data else requests.post
+        LOG.debug("HTTP request data is: %s", data)
         if not data:
             LOG.debug('Getting metadata from: %s', url)
         else:
@@ -238,10 +241,12 @@ class BaseHTTPMetadataService(BaseMetadataService):
         response.raise_for_status()
         return response.content
 
+
     def _get_data(self, path):
         """Getting the required information ussing metadata service."""
         try:
             response = self._http_request(path)
+            LOG.debug("Got this response: %s", response)
         except requests.HTTPError as exc:
             if exc.response.status_code == 404:
                 raise NotExistingMetadataException(
