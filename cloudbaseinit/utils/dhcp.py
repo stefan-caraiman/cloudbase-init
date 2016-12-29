@@ -57,20 +57,20 @@ def _get_dhcp_request_data(id_req, mac_address, requested_options,
 
     if vendor_id:
         vendor_id_b = vendor_id.encode('ascii')
-        data += b'\x3c' + struct.pack('b', len(vendor_id_b)) + vendor_id_b
+        data += b'\x3c' + struct.pack('B', len(vendor_id_b)) + vendor_id_b
 
     data += b'\x3d\x07\x01' + mac_address_b
-    data += b'\x37' + struct.pack('b', len(requested_options))
+    data += b'\x37' + struct.pack('B', len(requested_options))
 
     for option in requested_options:
-        data += struct.pack('b', option)
+        data += struct.pack('B', option)
 
     data += _OPTION_END
     return data
 
 
 def _parse_dhcp_reply(data, id_req):
-    message_type = struct.unpack('b', data[0:1])[0]
+    message_type = struct.unpack('B', data[0:1])[0]
 
     if message_type != 2:
         return False, {}
@@ -87,8 +87,8 @@ def _parse_dhcp_reply(data, id_req):
     i = 240
     data_len = len(data)
     while i < data_len and data[i:i + 1] != _OPTION_END:
-        id_option = struct.unpack('b', data[i:i + 1])[0]
-        option_data_len = struct.unpack('b', data[i + 1:i + 2])[0]
+        id_option = struct.unpack('B', data[i:i + 1])[0]
+        option_data_len = struct.unpack('B', data[i + 1:i + 2])[0]
         i += 2
         options[id_option] = data[i: i + option_data_len]
         i += option_data_len
