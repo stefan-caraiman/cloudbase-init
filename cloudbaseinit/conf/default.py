@@ -189,6 +189,15 @@ class GlobalOptions(conf_base.Options):
                 'cloud_config_plugins', default=[],
                 help='List which contains the name of the cloud config '
                      'plugins ordered by priority.'),
+            cfg.ListOpt(
+                'page_file_volume_labels', default=[],
+                help='Labels of volumes on which a Windows page file needs to '
+                     'be created. E.g.: "Temporary Storage"'),
+            cfg.ListOpt(
+                'page_file_volume_mount_points', default=[],
+                help='Volume moiunt points on which a Windows page file needs '
+                     'to be created. E.g.: '
+                     '"\\\\?\\GLOBALROOT\\device\\Harddisk1\\Partition1\\"'),
         ]
 
         self._cli_options = [
