@@ -101,6 +101,9 @@ class GlobalOptions(conf_base.Options):
                 help='The directory where the Heat configuration files must '
                      'be saved'),
             cfg.BoolOpt(
+                'ntp_enable_service', default=True,
+                help='Enables the NTP client service'),
+            cfg.BoolOpt(
                 'ntp_use_dhcp_config', default=False,
                 help='Configures NTP client time synchronization using '
                      'the NTP servers provided via DHCP'),
