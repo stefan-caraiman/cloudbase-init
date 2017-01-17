@@ -137,6 +137,9 @@ class BaseMetadataService(object):
         in the namedtuple defined above.
         """
 
+    def get_admin_username(self):
+        pass
+
     def get_admin_password(self):
         pass
 
@@ -149,6 +152,9 @@ class BaseMetadataService(object):
         return False
 
     def post_password(self, enc_password_b64):
+        pass
+
+    def get_server_cert(self):
         pass
 
     def get_client_auth_certs(self):
@@ -182,6 +188,15 @@ class BaseMetadataService(object):
             is True.
         """
         return False
+
+    def provisioning_started(self):
+        pass
+
+    def provisioning_completed(self):
+        pass
+
+    def provisioning_failed(self):
+        pass
 
 
 class BaseHTTPMetadataService(BaseMetadataService):

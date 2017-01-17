@@ -1079,7 +1079,7 @@ class WindowsUtils(base.BaseOSUtils):
 
         return values
 
-    def _get_logical_drives(self):
+    def get_logical_drives(self):
         buf_size = self.MAX_PATH
         buf = ctypes.create_unicode_buffer(buf_size + 1)
         buf_len = kernel32.GetLogicalDriveStringsW(buf_size, buf)
@@ -1090,7 +1090,7 @@ class WindowsUtils(base.BaseOSUtils):
         return self._split_str_buf_list(buf, buf_len)
 
     def get_cdrom_drives(self):
-        drives = self._get_logical_drives()
+        drives = self.get_logical_drives()
         return [d for d in drives if kernel32.GetDriveTypeW(d) ==
                 self.DRIVE_CDROM]
 
@@ -1322,3 +1322,10 @@ class WindowsUtils(base.BaseOSUtils):
             raise exception.CloudbaseInitException(
                 "The given timezone name is unrecognised: %r" % timezone_name)
         timezone.Timezone(windows_name).set(self)
+
+    def get_rdp_certificate_thumbrint(self):
+        conn = wmi.WMI(moniker='//./root/cimv2/TerminalServices')
+        tsSettings = conn.Win32_TSGeneralSetting()
+        if not tsSettings:
+            raise exception.ItemNotFoundException("No RDP certificate found")
+        return tsSettings[0].SSLCertificateSHA1Hash

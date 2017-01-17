@@ -133,3 +133,6 @@ class BaseOSUtils(object):
     def get_current_user(self):
         """Retrieve the username under which the current thread runs."""
         raise NotImplementedError()
+
+    def get_rdp_certificate_thumbrint(self):
+        pass
