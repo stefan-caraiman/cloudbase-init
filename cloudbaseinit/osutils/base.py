@@ -136,3 +136,9 @@ class BaseOSUtils(object):
 
     def get_rdp_certificate_thumbrint(self):
         pass
+
+    def is_real_time_clock_utc(self):
+        raise NotImplementedError()
+
+    def set_real_time_clock_utc(self, utc):
+        raise NotImplementedError()

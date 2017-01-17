@@ -105,6 +105,10 @@ class GlobalOptions(conf_base.Options):
                 help='Configures NTP client time synchronization using '
                      'the NTP servers provided via DHCP'),
             cfg.BoolOpt(
+                'real_time_clock_utc', default=False,
+                help='Sets the real time clock to use universal time (True) '
+                     'or local time (False)'),
+            cfg.BoolOpt(
                 'inject_user_password', default=True,
                 help='Set the password provided in the configuration. '
                      'If False or no password is provided, a random one '

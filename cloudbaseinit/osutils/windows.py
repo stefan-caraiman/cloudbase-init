@@ -1401,3 +1401,21 @@ class WindowsUtils(base.BaseOSUtils):
                             0, winreg.KEY_ALL_ACCESS) as key:
             winreg.SetValueEx(key, 'PagingFiles', 0,
                               winreg.REG_MULTI_SZ, values)
+
+    def is_real_time_clock_utc(self):
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            'SYSTEM\\CurrentControlSet\\Control\\'
+                            'TimeZoneInformation') as key:
+            try:
+                utc = winreg.QueryValueEx(key, 'RealTimeIsUniversal')[0]
+                return utc != 0
+            except FileNotFoundError:
+                return False
+
+    def set_real_time_clock_utc(self, utc):
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            'SYSTEM\\CurrentControlSet\\Control\\'
+                            'TimeZoneInformation',
+                            0, winreg.KEY_ALL_ACCESS) as key:
+            winreg.SetValueEx(key, 'RealTimeIsUniversal', 0,
+                              winreg.REG_DWORD, 1 if utc else 0)
