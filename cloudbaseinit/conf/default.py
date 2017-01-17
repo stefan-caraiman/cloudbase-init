@@ -19,6 +19,7 @@ from oslo_config import cfg
 
 from cloudbaseinit.conf import base as conf_base
 from cloudbaseinit import constant
+from cloudbaseinit.utils.windows import bootconfig
 
 
 class GlobalOptions(conf_base.Options):
@@ -198,6 +199,11 @@ class GlobalOptions(conf_base.Options):
                 help='Volume moiunt points on which a Windows page file needs '
                      'to be created. E.g.: '
                      '"\\\\?\\GLOBALROOT\\device\\Harddisk1\\Partition1\\"'),
+            cfg.StrOpt(
+                'boot_status_policy',
+                default=None,
+                choices=[bootconfig.POLICY_IGNORE_ALL_FAILURES],
+                help='Sets the Windows boot status policy.'),
         ]
 
         self._cli_options = [
