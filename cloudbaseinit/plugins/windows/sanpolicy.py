@@ -45,7 +45,7 @@ class SANPolicyPlugin(base.BasePlugin):
                 storage_manager.set_san_policy(new_san_policy)
                 LOG.info("SAN policy set to: %s", new_san_policy)
 
-        return base.PLUGIN_EXECUTE_ON_NEXT_BOOT, False
+        return base.PLUGIN_EXECUTION_DONE, False
 
     def get_os_requirements(self):
         return 'win32', (6, 1)
