@@ -217,6 +217,9 @@ class GlobalOptions(conf_base.Options):
                 default=None,
                 choices=[bootconfig.POLICY_IGNORE_ALL_FAILURES],
                 help='Sets the Windows boot status policy.'),
+            cfg.BoolOpt(
+                'rdp_set_keepalive', default=True,
+                help='Sets the RDP KeepAlive policy'),
         ]
 
         self._cli_options = [

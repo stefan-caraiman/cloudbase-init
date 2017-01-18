@@ -1368,13 +1368,6 @@ class WindowsUtils(base.BaseOSUtils):
                 "The given timezone name is unrecognised: %r" % timezone_name)
         timezone.Timezone(windows_name).set(self)
 
-    def get_rdp_certificate_thumbrint(self):
-        conn = wmi.WMI(moniker='//./root/cimv2/TerminalServices')
-        tsSettings = conn.Win32_TSGeneralSetting()
-        if not tsSettings:
-            raise exception.ItemNotFoundException("No RDP certificate found")
-        return tsSettings[0].SSLCertificateSHA1Hash
-
     def get_page_files(self):
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
                             'SYSTEM\\CurrentControlSet\\Control\\'

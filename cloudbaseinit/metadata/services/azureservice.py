@@ -221,6 +221,10 @@ class AzureService(base.BaseHTTPMetadataService):
             "machine?comp=roleProperties", role_properties_xml,
             parse_xml=False)
 
+    @property
+    def can_post_rdp_cert_thumbprint(self):
+        return True
+
     def post_rdp_cert_thumbprint(self, thumbprint):
         properties = {ROLE_PROPERTY_CERT_THUMB: thumbprint}
         self._post_role_properties(properties)
