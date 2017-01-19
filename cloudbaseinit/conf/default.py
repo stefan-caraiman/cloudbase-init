@@ -229,6 +229,10 @@ class GlobalOptions(conf_base.Options):
             cfg.BoolOpt(
                 'trim_enabled', default=False,
                 help='Enables or disables TRIM delete notifications'),
+            cfg.IntOpt(
+                'display_idle_timeout', default=0,
+                help='The idle timeout, in seconds, before powering off '
+                     'the display. Set 0 to leave the display always on'),
         ]
 
         self._cli_options = [
