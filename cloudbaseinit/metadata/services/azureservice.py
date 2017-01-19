@@ -330,6 +330,15 @@ class AzureService(base.BaseHTTPMetadataService):
         win_prov_conf_set = prov_section.WindowsProvisioningConfigurationSet
         return win_prov_conf_set.ComputerName.cdata
 
+    def get_enable_automatic_updates(self):
+        ovf_env = self._get_ovf_env()
+        prov_section = ovf_env.Environment.wa_ProvisioningSection
+        win_prov_conf_set = prov_section.WindowsProvisioningConfigurationSet
+        if hasattr(win_prov_conf_set, "EnableAutomaticUpdates"):
+            auto_updates = win_prov_conf_set.EnableAutomaticUpdates.cdata
+            return auto_updates.lower() == "true"
+        return False
+
     def get_kms_host(self):
         ovf_env = self._get_ovf_env()
         plat_sett_section = ovf_env.Environment.wa_PlatformSettingsSection
