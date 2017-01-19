@@ -142,3 +142,6 @@ class BaseOSUtils(object):
 
     def set_real_time_clock_utc(self, utc):
         raise NotImplementedError()
+
+    def enable_trim(self, enable):
+        raise NotImplementedError()

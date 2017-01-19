@@ -226,6 +226,9 @@ class GlobalOptions(conf_base.Options):
             cfg.BoolOpt(
                 'rdp_set_keepalive', default=True,
                 help='Sets the RDP KeepAlive policy'),
+            cfg.BoolOpt(
+                'trim_enabled', default=False,
+                help='Enables or disables TRIM delete notifications'),
         ]
 
         self._cli_options = [
