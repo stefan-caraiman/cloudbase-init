@@ -71,6 +71,12 @@ class GlobalOptions(conf_base.Options):
                 'activate_windows', default=False,
                 help='Activates Windows automatically'),
             cfg.BoolOpt(
+                'set_kms_product_key', default=False,
+                help='Sets the KMS product key for this OS'),
+            cfg.BoolOpt(
+                'set_avma_product_key', default=False,
+                help='Sets the AVMA product key for this OS'),
+            cfg.BoolOpt(
                 'winrm_enable_basic_auth', default=True,
                 help='Enables basic authentication for the WinRM '
                      'HTTPS listener'),

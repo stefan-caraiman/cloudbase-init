@@ -330,16 +330,19 @@ class AzureService(base.BaseHTTPMetadataService):
         win_prov_conf_set = prov_section.WindowsProvisioningConfigurationSet
         return win_prov_conf_set.ComputerName.cdata
 
-    def _get_env(self):
+    def get_kms_host(self):
         ovf_env = self._get_ovf_env()
+        plat_sett_section = ovf_env.Environment.wa_PlatformSettingsSection
+        if hasattr(plat_sett_section.PlatformSettings, "KmsServerHostname"):
+            return plat_sett_section.PlatformSettings.KmsServerHostname.cdata
 
-        prov_section = ovf_env.Environment.wa_ProvisioningSection
-        win_prov_conf_set = prov_section.WindowsProvisioningConfigurationSet
-
-        env = {}
-        env["admin_username"] = win_prov_conf_set.AdminUsername.cdata
-        env["admin_password"] = win_prov_conf_set.AdminPassword.cdata
-        return env
+    def get_use_avma_licensing(self):
+        ovf_env = self._get_ovf_env()
+        plat_sett_section = ovf_env.Environment.wa_PlatformSettingsSection
+        if hasattr(plat_sett_section.PlatformSettings, "UseAVMA"):
+            use_avma = plat_sett_section.PlatformSettings.UseAVMA.cdata
+            return use_avma.lower() == "true"
+        return False
 
     def load(self):
         try:
