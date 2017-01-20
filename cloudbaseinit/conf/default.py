@@ -219,10 +219,17 @@ class GlobalOptions(conf_base.Options):
                      'to be created. E.g.: '
                      '"\\\\?\\GLOBALROOT\\device\\Harddisk1\\Partition1\\"'),
             cfg.StrOpt(
-                'boot_status_policy',
+                'bcd_boot_status_policy',
                 default=None,
                 choices=[bootconfig.POLICY_IGNORE_ALL_FAILURES],
-                help='Sets the Windows boot status policy.'),
+                help='Sets the Windows BCD boot status policy'),
+            cfg.BoolOpt(
+                'bcd_enable_auto_recovery', default=False,
+                help='Enables or disables the BCD auto recovery'),
+            cfg.BoolOpt(
+                'set_unique_boot_disk_id', default=True,
+                help='Sets a new random unique id on the boot disk to avoid '
+                     'collisions'),
             cfg.BoolOpt(
                 'rdp_set_keepalive', default=True,
                 help='Sets the RDP KeepAlive policy'),

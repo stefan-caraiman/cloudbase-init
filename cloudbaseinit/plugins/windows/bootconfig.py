@@ -17,18 +17,36 @@ from oslo_log import log as oslo_logging
 from cloudbaseinit import conf as cloudbaseinit_conf
 from cloudbaseinit.plugins.common import base
 from cloudbaseinit.utils.windows import bootconfig
+from cloudbaseinit.utils.windows import disk
 
 CONF = cloudbaseinit_conf.CONF
 LOG = oslo_logging.getLogger(__name__)
 
 
 class BootConfigPlugin(base.BasePlugin):
-    def execute(self, service, shared_data):
-        if CONF.boot_status_policy:
-            LOG.info("Configure boot policy: %s", CONF.boot_status_policy)
-            bootconfig.set_boot_status_policy(CONF.boot_status_policy)
+    @staticmethod
+    def _set_unique_disk_id(phys_disk_path):
+        # A unique disk ID is needed to avoid disk signature collisions
+        # https://blogs.technet.microsoft.com/markrussinovich/2011/11/06/fixing-disk-signature-collisions/
+        LOG.info("Setting unique id on disk: %s", phys_disk_path)
+        with disk.Disk(phys_disk_path, allow_write=True) as d:
+            d.set_unique_id()
 
-        return base.PLUGIN_EXECUTE_ON_NEXT_BOOT, False
+    def execute(self, service, shared_data):
+        if CONF.bcd_boot_status_policy:
+            LOG.info("Configure boot policy: %s", CONF.bcd_boot_status_policy)
+            bootconfig.set_boot_status_policy(CONF.bcd_boot_status_policy)
+
+        if CONF.set_unique_boot_disk_id:
+            if len(bootconfig.get_boot_system_devices()) == 1:
+                LOG.info("Configuring boot device")
+                bootconfig.set_current_bcd_device_to_boot_partition()
+                # TODO(alexpilotti): get disk number from volume
+                self._set_unique_disk_id(u"\\\\.\\PHYSICALDRIVE0")
+
+        bootconfig.enable_auto_recovery(CONF.bcd_enable_auto_recovery)
+
+        return base.PLUGIN_EXECUTION_DONE, False
 
     def get_os_requirements(self):
-        return 'win32', (5, 2)
+        return 'win32', (6, 0)
