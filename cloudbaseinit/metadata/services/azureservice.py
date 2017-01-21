@@ -12,6 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import contextlib
 import os
 import socket
 import time
@@ -22,6 +23,7 @@ import six
 import untangle
 
 from cloudbaseinit import conf as cloudbaseinit_conf
+from cloudbaseinit import constant
 from cloudbaseinit import exception
 from cloudbaseinit.metadata.services import base
 from cloudbaseinit.osutils import factory as osutils_factory
@@ -245,42 +247,59 @@ class AzureService(base.BaseHTTPMetadataService):
         config = self._get_role_instance_config()
         return self._wire_server_request(config.FullConfig.cdata)
 
-    def get_server_cert(self):
-        config = self._get_role_instance_config()
-        cert_mgr = x509.CryptoAPICertManager()
-
+    @contextlib.contextmanager
+    def _create_transport_cert(self, cert_mgr):
         x509_thumbprint, x509_cert = cert_mgr.create_self_signed_cert(
-            "CN=Cloudbase-Init AzureService Transport", machine_keyset=True)
+            "CN=Cloudbase-Init AzureService Transport", machine_keyset=True,
+            store_name=CONF.azure.transport_cert_store_name)
 
         try:
-            cert_config = self._wire_server_request(
-                config.Certificates.cdata,
-                headers={"x-ms-guest-agent-public-x509-cert":
-                         x509_cert.replace("\r\n", "")})
-            cert_data = cert_config.CertificateFile.Data.cdata
-            cert_format = cert_config.CertificateFile.Format.cdata
-
-            pfx_data = cert_mgr.decode_pkcs7_base64_blob(
-                cert_data, x509_thumbprint, machine_keyset=True)
-
-            cert_mgr.import_pfx_certificate(pfx_data,
-                                            machine_keyset=True)
+            yield (x509_thumbprint, x509_cert)
         finally:
             cert_mgr.delete_certificate_from_store(
-                x509_thumbprint, machine_keyset=True)
+                x509_thumbprint, machine_keyset=True,
+                store_name=CONF.azure.transport_cert_store_name)
 
+    def _get_encoded_cert(self, transport_cert):
+        config = self._get_role_instance_config()
+        cert_config = self._wire_server_request(
+            config.Certificates.cdata,
+            headers={"x-ms-guest-agent-public-x509-cert":
+                     transport_cert.replace("\r\n", "")})
+
+        cert_data = cert_config.CertificateFile.Data.cdata
+        cert_format = cert_config.CertificateFile.Format.cdata
+        return cert_data, cert_format
+
+    def get_server_certs(self):
+        def _get_store_location(store_location):
+            if store_location == u"System":
+                return constant.CERT_LOCATION_LOCAL_MACHINE
+            else:
+                return store_location
+
+        cert_mgr = x509.CryptoAPICertManager()
+        with self._create_transport_cert(cert_mgr) as (
+                transport_cert_thumbprint, transport_cert):
+
+            cert_data, cert_format = self._get_encoded_cert(transport_cert)
+            pfx_data = cert_mgr.decode_pkcs7_base64_blob(
+                cert_data, transport_cert_thumbprint, machine_keyset=True,
+                store_name=CONF.azure.transport_cert_store_name)
+
+        certs_info = []
         host_env = self._get_hosting_environment()
         host_env_config = host_env.HostingEnvironmentConfig
-        host_env_cert = host_env_config.StoredCertificates.StoredCertificate
-
-        return {
-            "store_name": host_env_cert["storeName"],
-            "certificate_id": host_env_cert["certificateId"],
-            "configuration_level": host_env_cert["configurationLevel"],
-            "name": host_env_cert["name"],
-            "cert_data": pfx_data,
-            "cert_format": cert_format,
-        }
+        for cert in host_env_config.StoredCertificates.StoredCertificate:
+            certs_info.append({
+                "store_name": cert["storeName"],
+                "store_location": _get_store_location(
+                    cert["configurationLevel"]),
+                "certificate_id": cert["certificateId"],
+                "name": cert["name"],
+                "pfx_data": pfx_data,
+            })
+        return certs_info
 
     def get_instance_id(self):
         return self._get_role_instance_id()

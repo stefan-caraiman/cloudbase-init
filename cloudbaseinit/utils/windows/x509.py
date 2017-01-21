@@ -219,25 +219,6 @@ class CryptoAPICertManager(object):
                     cert_context_p, cryptoapi.szOID_PKIX_KP_SERVER_AUTH):
                 raise cryptoapi.CryptoAPIException()
 
-            #key_context = cryptoapi.CERT_KEY_CONTEXT()
-            #key_context.cbSize = ctypes.sizeof(cryptoapi.CERT_KEY_CONTEXT)
-            #key_context.hNCryptKey = key_handle
-            #key_context.dwKeySpec = cryptoapi.AT_KEYEXCHANGE
-
-            #if not cryptoapi.CertSetCertificateContextProperty(
-            #        cert_context_p,
-            #        cryptoapi.CERT_KEY_CONTEXT_PROP_ID,
-            #        0,
-            #        ctypes.pointer(key_context)):
-            #    raise cryptoapi.CryptoAPIException()
-
-            #if not cryptoapi.CertSetCertificateContextProperty(
-            #        cert_context_p,
-            #        cryptoapi.CERT_KEY_PROV_INFO_PROP_ID,
-            #        0,
-            #        ctypes.pointer(key_prov_info)):
-            #    raise cryptoapi.CryptoAPIException()
-
             if machine_keyset:
                 flags = cryptoapi.CERT_SYSTEM_STORE_LOCAL_MACHINE
             else:
@@ -308,10 +289,11 @@ class CryptoAPICertManager(object):
         hash_blob.pbData = thumbprint
 
         try:
+            flags = cryptoapi.CERT_STORE_OPEN_EXISTING_FLAG
             if machine_keyset:
-                flags = cryptoapi.CERT_SYSTEM_STORE_LOCAL_MACHINE
+                flags |= cryptoapi.CERT_SYSTEM_STORE_LOCAL_MACHINE
             else:
-                flags = cryptoapi.CERT_SYSTEM_STORE_CURRENT_USER
+                flags |= cryptoapi.CERT_SYSTEM_STORE_CURRENT_USER
 
             store_handle = cryptoapi.CertOpenStore(
                 cryptoapi.CERT_STORE_PROV_SYSTEM, 0, 0, flags,

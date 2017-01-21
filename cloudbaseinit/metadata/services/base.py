@@ -154,7 +154,7 @@ class BaseMetadataService(object):
     def post_password(self, enc_password_b64):
         pass
 
-    def get_server_cert(self):
+    def get_server_certs(self):
         pass
 
     def get_client_auth_certs(self):
