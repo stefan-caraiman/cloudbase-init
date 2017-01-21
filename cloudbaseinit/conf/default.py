@@ -104,6 +104,10 @@ class GlobalOptions(conf_base.Options):
             cfg.StrOpt(
                 'username', default='Admin', help='User to be added to the '
                 'system or updated if already existing'),
+            cfg.BoolOpt(
+                'rename_admin_user', default=False,
+                help='Renames the builtin admin user instead of creating a '
+                     'new user'),
             cfg.ListOpt(
                 'groups', default=['Administrators'],
                 help='List of local groups to which the user specified in '
