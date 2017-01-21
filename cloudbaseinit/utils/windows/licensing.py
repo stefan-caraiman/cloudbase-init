@@ -73,17 +73,31 @@ def set_product_key(product_key):
     return _run_slmgr(['/ipk', product_key])
 
 
+def _is_current_product(product):
+    return bool(product.PartialProductKey)
+
+
+def _get_products():
+    conn = wmi.WMI(moniker='//./root/cimv2')
+    return conn.SoftwareLicensingProduct(LicenseIsAddon=False)
+
+
+def is_eval():
+    def _is_eval(product):
+        return (u"TIMEBASED_EVAL" in product.Description or
+                product.EvaluationEndDate != u"16010101000000.000000-000")
+
+    for product in _get_products():
+        app_id = product.ApplicationId.lower()
+        if (app_id == WINDOWS_APP_ID and _is_eval(product) and
+                _is_current_product(product)):
+            return product.EvaluationEndDate
+
+
 def get_kms_product():
     def _is_kms_client(product):
         # note(alexpilotti): could check for KeyManagementServiceProductKeyID
-        return "VOLUME_KMSCLIENT" in product.Description
-
-    def _is_current_product(product):
-        return bool(product.PartialProductKey)
-
-    def _get_products():
-        conn = wmi.WMI(moniker='//./root/cimv2')
-        return conn.SoftwareLicensingProduct(LicenseIsAddon=False)
+        return u"VOLUME_KMSCLIENT" in product.Description
 
     for product in _get_products():
         app_id = product.ApplicationId.lower()

@@ -74,9 +74,14 @@ class WindowsLicensingPlugin(base.BasePlugin):
             LOG.info("Licensing info and activation are not available on "
                      "Nano Server")
         else:
-            self._set_product_key(service)
-            self._set_kms_host(service)
-            self._activate_windows(service)
+            eval_end_date = licensing.is_eval()
+            if eval_end_date:
+                LOG.info("Evaluation license, skipping activation. "
+                         "Evaluation end date: %s", eval_end_date)
+            else:
+                self._set_product_key(service)
+                self._set_kms_host(service)
+                self._activate_windows(service)
 
             license_info = licensing.get_licensing_info()
             LOG.info('Microsoft Windows license info:\n%s' % license_info)
