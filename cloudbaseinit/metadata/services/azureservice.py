@@ -358,6 +358,21 @@ class AzureService(base.BaseHTTPMetadataService):
             return auto_updates.lower() == "true"
         return False
 
+    def get_winrm_listeners_configuration(self):
+        listeners_config = []
+        ovf_env = self._get_ovf_env()
+        prov_section = ovf_env.Environment.wa_ProvisioningSection
+        win_prov_conf_set = prov_section.WindowsProvisioningConfigurationSet
+        if hasattr(win_prov_conf_set, "WinRM"):
+            for listener in win_prov_conf_set.WinRM.Listeners.Listener:
+                protocol = listener.Protocol.cdata
+                config = {"protocol": protocol}
+                if hasattr(listener, "CertificateThumbprint"):
+                    cert_thumbprint = listener.CertificateThumbprint.cdata
+                    config["certificate_thumbprint"] = cert_thumbprint
+                listeners_config.append(config)
+        return listeners_config
+
     def get_kms_host(self):
         ovf_env = self._get_ovf_env()
         plat_sett_section = ovf_env.Environment.wa_PlatformSettingsSection

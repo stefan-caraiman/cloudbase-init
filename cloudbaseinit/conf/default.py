@@ -79,7 +79,13 @@ class GlobalOptions(conf_base.Options):
             cfg.BoolOpt(
                 'winrm_enable_basic_auth', default=True,
                 help='Enables basic authentication for the WinRM '
-                     'HTTPS listener'),
+                     'listeners'),
+            cfg.BoolOpt(
+                'winrm_configure_http_listener', default=False,
+                help='Configures the WinRM HTTP listener'),
+            cfg.BoolOpt(
+                'winrm_configure_https_listener', default=True,
+                help='Configures the WinRM HTTPS listener'),
             cfg.ListOpt(
                 'volumes_to_extend', default=None,
                 help='List of volumes that need to be extended '
