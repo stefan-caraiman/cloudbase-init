@@ -373,6 +373,19 @@ class AzureService(base.BaseHTTPMetadataService):
                 listeners_config.append(config)
         return listeners_config
 
+    def get_vm_agent_package_provisioning_data(self):
+        ovf_env = self._get_ovf_env()
+        plat_sett_section = ovf_env.Environment.wa_PlatformSettingsSection
+        plat_sett = plat_sett_section.PlatformSettings
+        prov_ga = False
+        ga_package_name = None
+        if hasattr(plat_sett, "ProvisionGuestAgent"):
+            prov_ga = plat_sett.ProvisionGuestAgent.cdata.lower() == "true"
+        if hasattr(plat_sett, "GuestAgentPackageName"):
+            ga_package_name = plat_sett.GuestAgentPackageName.cdata
+        return {"provision": prov_ga,
+                "package_name": ga_package_name}
+
     def get_kms_host(self):
         ovf_env = self._get_ovf_env()
         plat_sett_section = ovf_env.Environment.wa_PlatformSettingsSection

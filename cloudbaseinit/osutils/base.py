@@ -179,3 +179,6 @@ class BaseOSUtils(object):
 
     def enable_trim(self, enable):
         raise NotImplementedError()
+
+    def get_file_version(self, path):
+        raise NotImplementedError()
