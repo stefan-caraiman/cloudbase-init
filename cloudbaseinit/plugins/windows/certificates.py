@@ -40,7 +40,7 @@ class ServerCerificatesPlugin(base.BasePlugin):
         certs_info = service.get_server_certs()
 
         if certs_info is None:
-            LOG.info("The metadata servcie does not provide server "
+            LOG.info("The metadata service does not provide server "
                      "certificates")
         else:
             cert_mgr = x509.CryptoAPICertManager()
