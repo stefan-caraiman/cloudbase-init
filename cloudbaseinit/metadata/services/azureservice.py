@@ -260,12 +260,10 @@ class AzureService(base.BaseHTTPMetadataService):
                 x509_thumbprint, machine_keyset=True,
                 store_name=CONF.azure.transport_cert_store_name)
 
-    def _get_encoded_cert(self, transport_cert):
-        config = self._get_role_instance_config()
+    def _get_encoded_cert(self, cert_url, transport_cert):
         cert_config = self._wire_server_request(
-            config.Certificates.cdata,
-            headers={"x-ms-guest-agent-public-x509-cert":
-                     transport_cert.replace("\r\n", "")})
+            cert_url, headers={"x-ms-guest-agent-public-x509-cert":
+                               transport_cert.replace("\r\n", "")})
 
         cert_data = cert_config.CertificateFile.Data.cdata
         cert_format = cert_config.CertificateFile.Format.cdata
@@ -278,16 +276,22 @@ class AzureService(base.BaseHTTPMetadataService):
             else:
                 return store_location
 
+        certs_info = []
+        config = self._get_role_instance_config()
+        if not hasattr(config, 'Certificates'):
+            return certs_info
+
         cert_mgr = x509.CryptoAPICertManager()
         with self._create_transport_cert(cert_mgr) as (
                 transport_cert_thumbprint, transport_cert):
 
-            cert_data, cert_format = self._get_encoded_cert(transport_cert)
+            cert_url = config.Certificates.cdata
+            cert_data, cert_format = self._get_encoded_cert(
+                cert_url, transport_cert)
             pfx_data = cert_mgr.decode_pkcs7_base64_blob(
                 cert_data, transport_cert_thumbprint, machine_keyset=True,
                 store_name=CONF.azure.transport_cert_store_name)
 
-        certs_info = []
         host_env = self._get_hosting_environment()
         host_env_config = host_env.HostingEnvironmentConfig
         for cert in host_env_config.StoredCertificates.StoredCertificate:
