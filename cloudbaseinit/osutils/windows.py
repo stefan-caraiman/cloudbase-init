@@ -311,6 +311,7 @@ GUID_DEVINTERFACE_DISK = disk.GUID(0x53f56307, 0xb6bf, 0x11d0, 0x94, 0xf2,
 class WindowsUtils(base.BaseOSUtils):
     NERR_GroupNotFound = 2220
     NERR_UserNotFound = 2221
+    ERROR_PATH_NOT_FOUND = 3
     ERROR_ACCESS_DENIED = 5
     ERROR_INSUFFICIENT_BUFFER = 122
     ERROR_INVALID_NAME = 123
@@ -1201,7 +1202,8 @@ class WindowsUtils(base.BaseOSUtils):
         if not kernel32.GetVolumeNameForVolumeMountPointW(
                 six.text_type(mount_point), volume_name,
                 max_volume_name_len):
-            if kernel32.GetLastError() == self.ERROR_INVALID_NAME:
+            if kernel32.GetLastError() in [
+                    self.ERROR_INVALID_NAME, self.ERROR_PATH_NOT_FOUND]:
                 raise exception.ItemNotFoundException(
                     "Mount point not found: %s" % mount_point)
             else:
@@ -1506,8 +1508,8 @@ class WindowsUtils(base.BaseOSUtils):
         for value in values:
             v = value.split(" ")
             path = v[0]
-            min_size_mb = int(v[1]) if len(v) > 0 else 0
-            max_size_mb = int(v[2]) if len(v) > 1 else 0
+            min_size_mb = int(v[1]) if len(v) > 1 else 0
+            max_size_mb = int(v[2]) if len(v) > 2 else 0
             page_files.append((path, min_size_mb, max_size_mb))
         return page_files
 
