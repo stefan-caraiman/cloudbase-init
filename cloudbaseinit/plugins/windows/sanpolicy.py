@@ -25,9 +25,6 @@ LOG = oslo_logging.getLogger(__name__)
 
 
 class SANPolicyPlugin(base.BasePlugin):
-    def _get_volumes_to_extend(self):
-        if CONF.volumes_to_extend is not None:
-            return list(map(int, CONF.volumes_to_extend))
 
     def execute(self, service, shared_data):
         san_policy_map = {
