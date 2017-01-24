@@ -250,6 +250,14 @@ class GlobalOptions(conf_base.Options):
                 'display_idle_timeout', default=0,
                 help='The idle timeout, in seconds, before powering off '
                      'the display. Set 0 to leave the display always on'),
+            cfg.BoolOpt(
+                'metadata_report_provisioning_started', default=False,
+                help='Reports to the metadata service that provisioning has '
+                     'started'),
+            cfg.BoolOpt(
+                'metadata_report_provisioning_completed', default=False,
+                help='Reports to the metadata service that provisioning '
+                     'completed or failed'),
         ]
 
         self._cli_options = [
