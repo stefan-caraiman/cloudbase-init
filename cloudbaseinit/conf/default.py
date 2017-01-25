@@ -19,6 +19,7 @@ from oslo_config import cfg
 
 from cloudbaseinit.conf import base as conf_base
 from cloudbaseinit import constant
+from cloudbaseinit.utils.windows import bootconfig
 
 
 class GlobalOptions(conf_base.Options):
@@ -70,9 +71,21 @@ class GlobalOptions(conf_base.Options):
                 'activate_windows', default=False,
                 help='Activates Windows automatically'),
             cfg.BoolOpt(
+                'set_kms_product_key', default=False,
+                help='Sets the KMS product key for this OS'),
+            cfg.BoolOpt(
+                'set_avma_product_key', default=False,
+                help='Sets the AVMA product key for this OS'),
+            cfg.BoolOpt(
                 'winrm_enable_basic_auth', default=True,
                 help='Enables basic authentication for the WinRM '
-                     'HTTPS listener'),
+                     'listeners'),
+            cfg.BoolOpt(
+                'winrm_configure_http_listener', default=False,
+                help='Configures the WinRM HTTP listener'),
+            cfg.BoolOpt(
+                'winrm_configure_https_listener', default=True,
+                help='Configures the WinRM HTTPS listener'),
             cfg.ListOpt(
                 'volumes_to_extend', default=None,
                 help='List of volumes that need to be extended '
@@ -80,6 +93,12 @@ class GlobalOptions(conf_base.Options):
                      'By default all the available volumes can be extended. '
                      'Volumes must be specified using a comma separated list '
                      'of volume indexes, e.g.: "1,2"'),
+            cfg.StrOpt(
+                'san_policy', default=None,
+                choices=[constant.SAN_POLICY_ONLINE_STR,
+                         constant.SAN_POLICY_OFFLINE_STR,
+                         constant.SAN_POLICY_OFFLINE_SHARED_STR],
+                help='If not None, the SAN policy is set to the given value'),
             cfg.StrOpt(
                 'local_scripts_path', default=None,
                 help='Path location containing scripts to be executed when '
@@ -91,6 +110,10 @@ class GlobalOptions(conf_base.Options):
             cfg.StrOpt(
                 'username', default='Admin', help='User to be added to the '
                 'system or updated if already existing'),
+            cfg.BoolOpt(
+                'rename_admin_user', default=False,
+                help='Renames the builtin admin user instead of creating a '
+                     'new user'),
             cfg.ListOpt(
                 'groups', default=['Administrators'],
                 help='List of local groups to which the user specified in '
@@ -100,9 +123,16 @@ class GlobalOptions(conf_base.Options):
                 help='The directory where the Heat configuration files must '
                      'be saved'),
             cfg.BoolOpt(
+                'ntp_enable_service', default=True,
+                help='Enables the NTP client service'),
+            cfg.BoolOpt(
                 'ntp_use_dhcp_config', default=False,
                 help='Configures NTP client time synchronization using '
                      'the NTP servers provided via DHCP'),
+            cfg.BoolOpt(
+                'real_time_clock_utc', default=False,
+                help='Sets the real time clock to use universal time (True) '
+                     'or local time (False)'),
             cfg.BoolOpt(
                 'inject_user_password', default=True,
                 help='Set the password provided in the configuration. '
@@ -189,6 +219,45 @@ class GlobalOptions(conf_base.Options):
                 'cloud_config_plugins', default=[],
                 help='List which contains the name of the cloud config '
                      'plugins ordered by priority.'),
+            cfg.ListOpt(
+                'page_file_volume_labels', default=[],
+                help='Labels of volumes on which a Windows page file needs to '
+                     'be created. E.g.: "Temporary Storage"'),
+            cfg.ListOpt(
+                'page_file_volume_mount_points', default=[],
+                help='Volume moiunt points on which a Windows page file needs '
+                     'to be created. E.g.: '
+                     '"\\\\?\\GLOBALROOT\\device\\Harddisk1\\Partition1\\"'),
+            cfg.StrOpt(
+                'bcd_boot_status_policy',
+                default=None,
+                choices=[bootconfig.POLICY_IGNORE_ALL_FAILURES],
+                help='Sets the Windows BCD boot status policy'),
+            cfg.BoolOpt(
+                'bcd_enable_auto_recovery', default=False,
+                help='Enables or disables the BCD auto recovery'),
+            cfg.BoolOpt(
+                'set_unique_boot_disk_id', default=True,
+                help='Sets a new random unique id on the boot disk to avoid '
+                     'collisions'),
+            cfg.BoolOpt(
+                'rdp_set_keepalive', default=True,
+                help='Sets the RDP KeepAlive policy'),
+            cfg.BoolOpt(
+                'trim_enabled', default=False,
+                help='Enables or disables TRIM delete notifications'),
+            cfg.IntOpt(
+                'display_idle_timeout', default=0,
+                help='The idle timeout, in seconds, before powering off '
+                     'the display. Set 0 to leave the display always on'),
+            cfg.BoolOpt(
+                'metadata_report_provisioning_started', default=False,
+                help='Reports to the metadata service that provisioning has '
+                     'started'),
+            cfg.BoolOpt(
+                'metadata_report_provisioning_completed', default=False,
+                help='Reports to the metadata service that provisioning '
+                     'completed or failed'),
         ]
 
         self._cli_options = [

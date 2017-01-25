@@ -26,6 +26,7 @@ import pywintypes
 import six
 from six.moves import winreg
 from tzlocal import windows_tz
+import win32api
 from win32com import client
 import win32net
 import win32netcon
@@ -199,6 +200,10 @@ msvcrt.malloc.restype = ctypes.c_void_p
 msvcrt.free.argtypes = [ctypes.c_void_p]
 msvcrt.free.restype = None
 
+ntdll.RtlGetVersion.argtypes = [
+    ctypes.POINTER(Win32_OSVERSIONINFOEX_W)]
+ntdll.RtlGetVersion.restype = wintypes.DWORD
+
 ntdll.RtlVerifyVersionInfo.argtypes = [
     ctypes.POINTER(Win32_OSVERSIONINFOEX_W),
     wintypes.DWORD, wintypes.ULARGE_INTEGER]
@@ -241,6 +246,18 @@ kernel32.HeapAlloc.restype = wintypes.LPVOID
 kernel32.HeapFree.argtypes = [wintypes.HANDLE, wintypes.DWORD,
                               wintypes.LPVOID]
 kernel32.HeapFree.restype = wintypes.BOOL
+
+kernel32.GetVolumeNameForVolumeMountPointW.argtypes = [wintypes.LPCWSTR,
+                                                       wintypes.LPWSTR,
+                                                       wintypes.DWORD]
+kernel32.GetVolumeNameForVolumeMountPointW.restype = wintypes.BOOL
+
+kernel32.GetVolumePathNamesForVolumeNameW.argtypes = [wintypes.LPCWSTR,
+                                                      wintypes.LPWSTR,
+                                                      wintypes.DWORD,
+                                                      ctypes.POINTER(
+                                                          wintypes.DWORD)]
+kernel32.GetVolumePathNamesForVolumeNameW.restype = wintypes.BOOL
 
 iphlpapi.GetIpForwardTable.argtypes = [
     ctypes.POINTER(Win32_MIB_IPFORWARDTABLE),
@@ -294,9 +311,12 @@ GUID_DEVINTERFACE_DISK = disk.GUID(0x53f56307, 0xb6bf, 0x11d0, 0x94, 0xf2,
 class WindowsUtils(base.BaseOSUtils):
     NERR_GroupNotFound = 2220
     NERR_UserNotFound = 2221
+    ERROR_PATH_NOT_FOUND = 3
     ERROR_ACCESS_DENIED = 5
     ERROR_INSUFFICIENT_BUFFER = 122
+    ERROR_INVALID_NAME = 123
     ERROR_NO_DATA = 232
+    ERROR_MORE_DATA = 234
     ERROR_NO_SUCH_MEMBER = 1387
     ERROR_MEMBER_IN_ALIAS = 1378
     ERROR_INVALID_MEMBER = 1388
@@ -348,6 +368,31 @@ class WindowsUtils(base.BaseOSUtils):
     SERVICE_START_MODE_MANUAL = "Manual"
     SERVICE_START_MODE_DISABLED = "Disabled"
 
+    _SERVICE_START_TYPE_MAP = {
+        SERVICE_START_MODE_AUTOMATIC:
+        win32service.SERVICE_AUTO_START,
+        SERVICE_START_MODE_MANUAL:
+        win32service.SERVICE_DEMAND_START,
+        SERVICE_START_MODE_MANUAL:
+        win32service.SERVICE_DISABLED}
+
+    _SERVICE_STATUS_MAP = {
+        win32service.SERVICE_CONTINUE_PENDING:
+        SERVICE_STATUS_CONTINUE_PENDING,
+        win32service.SERVICE_PAUSE_PENDING:
+        SERVICE_STATUS_PAUSE_PENDING,
+        win32service.SERVICE_PAUSED:
+        SERVICE_STATUS_PAUSED,
+        win32service.SERVICE_RUNNING:
+        SERVICE_STATUS_RUNNING,
+        win32service.SERVICE_START_PENDING:
+        SERVICE_STATUS_START_PENDING,
+        win32service.SERVICE_STOP_PENDING:
+        SERVICE_STATUS_STOP_PENDING,
+        win32service.SERVICE_STOPPED:
+        SERVICE_STATUS_STOPPED,
+    }
+
     ComputerNamePhysicalDnsHostname = 5
 
     _config_key = 'SOFTWARE\\Cloudbase Solutions\\Cloudbase-Init\\'
@@ -391,6 +436,40 @@ class WindowsUtils(base.BaseOSUtils):
         except win32net.error as ex:
             raise exception.CloudbaseInitException(
                 "Create user failed: %s" % ex.args[2])
+
+    def rename_user(self, username, new_username):
+        user_info = {
+            "name": new_username,
+        }
+
+        try:
+            win32net.NetUserSetInfo(None, username, 0, user_info)
+        except win32net.error as ex:
+            if ex.args[0] == self.NERR_UserNotFound:
+                raise exception.ItemNotFoundException(
+                    "User not found: %s" % username)
+            else:
+                raise exception.CloudbaseInitException(
+                    "Renaming user failed: %s" % ex.args[2])
+
+    def enum_users(self):
+        usernames = []
+        resume_handle = 0
+        while True:
+            try:
+                users_info, total, resume_handle = win32net.NetUserEnum(
+                    None, 0, win32netcon.FILTER_NORMAL_ACCOUNT, resume_handle)
+            except win32net.error as ex:
+                raise exception.CloudbaseInitException(
+                    "Enumerating users failed: %s" % ex.args[2])
+
+            usernames += [u["name"] for u in users_info]
+            if not resume_handle:
+                return usernames
+
+    def is_builtin_admin(self, username):
+        sid = self.get_user_sid(username)
+        return sid and sid.startswith(u"S-1-5-") and sid.endswith(u"-500")
 
     def _get_user_info(self, username, level):
         try:
@@ -458,7 +537,7 @@ class WindowsUtils(base.BaseOSUtils):
         lmi.lgrmi3_domainandname = six.text_type(username)
 
         ret_val = netapi32.NetLocalGroupAddMembers(0, six.text_type(groupname),
-                                                   3, ctypes.addressof(lmi), 1)
+                                                   3, ctypes.pointer(lmi), 1)
 
         if ret_val == self.NERR_GroupNotFound:
             raise exception.CloudbaseInitException('Group not found')
@@ -813,74 +892,121 @@ class WindowsUtils(base.BaseOSUtils):
             else:
                 raise ex
 
-    def _get_service(self, service_name):
-        conn = wmi.WMI(moniker='//./root/cimv2')
-        service_list = conn.Win32_Service(Name=service_name)
-        if len(service_list):
-            return service_list[0]
-
     def check_service_exists(self, service_name):
+        LOG.debug("Checking if service exists: %s", service_name)
         try:
             with self._get_service_handle(service_name):
                 return True
         except pywintypes.error as ex:
-            print(ex)
             if ex.winerror == winerror.ERROR_SERVICE_DOES_NOT_EXIST:
                 return False
             raise
 
     def get_service_status(self, service_name):
-        service = self._get_service(service_name)
-        return service.State
+        LOG.debug("Getting service status for: %s", service_name)
+        with self._get_service_handle(
+                service_name, win32service.SERVICE_QUERY_STATUS) as hs:
+            service_status = win32service.QueryServiceStatusEx(hs)
+            state = service_status['CurrentState']
+
+            return self._SERVICE_STATUS_MAP.get(
+                state, WindowsUtils.SERVICE_STATUS_UNKNOWN)
 
     def get_service_start_mode(self, service_name):
-        service = self._get_service(service_name)
-        return service.StartMode
+        LOG.debug("Getting service start mode for: %s", service_name)
+        with self._get_service_handle(
+                service_name, win32service.SERVICE_QUERY_CONFIG) as hs:
+            service_config = win32service.QueryServiceConfig(hs)
+
+            start_type = service_config[1]
+            return [k for k, v in self._SERVICE_START_TYPE_MAP.items()
+                    if v == start_type][0]
 
     def set_service_start_mode(self, service_name, start_mode):
         # TODO(alexpilotti): Handle the "Delayed Start" case
-        service = self._get_service(service_name)
-        (ret_val,) = service.ChangeStartMode(start_mode)
-        if ret_val != 0:
-            raise exception.CloudbaseInitException(
-                'Setting service %(service_name)s start mode failed with '
-                'return value: %(ret_val)d' % {'service_name': service_name,
-                                               'ret_val': ret_val})
+        LOG.debug("Setting service start mode for: %s", service_name)
+        start_type = self._get_win32_start_type(start_mode)
+
+        with self._get_service_handle(
+                service_name, win32service.SERVICE_CHANGE_CONFIG) as hs:
+            win32service.ChangeServiceConfig(
+                hs, win32service.SERVICE_NO_CHANGE,
+                start_type, win32service.SERVICE_NO_CHANGE,
+                None, None, False, None, None, None, None)
 
     def start_service(self, service_name):
         LOG.debug('Starting service %s', service_name)
-        service = self._get_service(service_name)
-        (ret_val,) = service.StartService()
-        if ret_val != 0:
-            raise exception.CloudbaseInitException(
-                'Starting service %(service_name)s failed with return value: '
-                '%(ret_val)d' % {'service_name': service_name,
-                                 'ret_val': ret_val})
+        with self._get_service_handle(
+                service_name, win32service.SERVICE_START) as hs:
+            win32service.StartService(hs, service_name)
 
-    def stop_service(self, service_name):
+    def stop_service(self, service_name, wait=False):
         LOG.debug('Stopping service %s', service_name)
-        service = self._get_service(service_name)
-        (ret_val,) = service.StopService()
-        if ret_val != 0:
-            raise exception.CloudbaseInitException(
-                'Stopping service %(service_name)s failed with return value:'
-                ' %(ret_val)d' % {'service_name': service_name,
-                                  'ret_val': ret_val})
+        with self._get_service_handle(
+                service_name,
+                win32service.SERVICE_STOP |
+                win32service.SERVICE_QUERY_STATUS) as hs:
+            win32service.ControlService(hs, win32service.SERVICE_CONTROL_STOP)
+            if wait:
+                while True:
+                    service_status = win32service.QueryServiceStatusEx(hs)
+                    state = service_status['CurrentState']
+                    if state == win32service.SERVICE_STOPPED:
+                        return
+                    time.sleep(.1)
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _get_service_control_manager(
+            scm_access=win32service.SC_MANAGER_CONNECT):
+        hscm = win32service.OpenSCManager(None, None, scm_access)
+        try:
+            yield hscm
+        finally:
+            win32service.CloseServiceHandle(hscm)
 
     @staticmethod
     @contextlib.contextmanager
     def _get_service_handle(service_name,
                             service_access=win32service.SERVICE_QUERY_CONFIG,
                             scm_access=win32service.SC_MANAGER_CONNECT):
-        hscm = win32service.OpenSCManager(None, None, scm_access)
-        hs = None
-        try:
+        with WindowsUtils._get_service_control_manager(scm_access) as hscm:
             hs = win32service.OpenService(hscm, service_name, service_access)
-            yield hs
-        finally:
-            if hs:
+            try:
+                yield hs
+            finally:
                 win32service.CloseServiceHandle(hs)
-            win32service.CloseServiceHandle(hscm)
+
+    @staticmethod
+    def _get_win32_start_type(start_mode):
+        start_type = WindowsUtils._SERVICE_START_TYPE_MAP.get(start_mode)
+        if not start_type:
+            raise exception.InvalidStateException(
+                "Invalid service start mode: %s" % start_mode)
+        return start_type
+
+    def create_service(self, service_name, display_name, path, start_mode,
+                       username=None, password=None):
+        LOG.debug('Creating service %s', service_name)
+        start_type = self._get_win32_start_type(start_mode)
+
+        with WindowsUtils._get_service_control_manager(
+                scm_access=win32service.SC_MANAGER_CREATE_SERVICE) as hscm:
+            hs = win32service.CreateService(
+                hscm, service_name, display_name,
+                win32service.SERVICE_ALL_ACCESS,
+                win32service.SERVICE_WIN32_OWN_PROCESS,
+                start_type,
+                win32service.SERVICE_ERROR_NORMAL,
+                path, None, False, None,
+                username, password)
+            win32service.CloseServiceHandle(hs)
+
+    def delete_service(self, service_name):
+        LOG.debug('Deleting service %s', service_name)
+        with self._get_service_handle(
+                service_name, win32service.SERVICE_ALL_ACCESS) as hs:
+            win32service.DeleteService(hs)
 
     def set_service_credentials(self, service_name, username, password):
         LOG.debug('Setting service credentials: %s', service_name)
@@ -1021,6 +1147,23 @@ class WindowsUtils(base.BaseOSUtils):
             raise exception.CloudbaseInitException(
                 'Unable to add route: %s' % err)
 
+    def get_os_version(self):
+        vi = Win32_OSVERSIONINFOEX_W()
+        vi.dwOSVersionInfoSize = ctypes.sizeof(Win32_OSVERSIONINFOEX_W)
+        ret_val = ntdll.RtlGetVersion(ctypes.byref(vi))
+        if ret_val:
+            raise exception.WindowsCloudbaseInitException(
+                "RtlGetVersion failed with error: %s" % ret_val)
+        return {"major_version": vi.dwMajorVersion,
+                "minor_version": vi.dwMinorVersion,
+                "build_number": vi.dwBuildNumber,
+                "platform_id": vi.dwPlatformId,
+                "csd_version": vi.szCSDVersion,
+                "service_pack_major": vi.wServicePackMajor,
+                "service_pack_minor": vi.wServicePackMinor,
+                "suite_mask": vi.wSuiteMask,
+                "product_type": vi.wProductType}
+
     def check_os_version(self, major, minor, build=0):
         vi = Win32_OSVERSIONINFOEX_W()
         vi.dwOSVersionInfoSize = ctypes.sizeof(Win32_OSVERSIONINFOEX_W)
@@ -1052,6 +1195,38 @@ class WindowsUtils(base.BaseOSUtils):
         if ret_val:
             return label.value
 
+    def get_volume_path_names_by_mount_point(self, mount_point):
+        max_volume_name_len = 50
+        volume_name = ctypes.create_unicode_buffer(max_volume_name_len)
+
+        if not kernel32.GetVolumeNameForVolumeMountPointW(
+                six.text_type(mount_point), volume_name,
+                max_volume_name_len):
+            if kernel32.GetLastError() in [
+                    self.ERROR_INVALID_NAME, self.ERROR_PATH_NOT_FOUND]:
+                raise exception.ItemNotFoundException(
+                    "Mount point not found: %s" % mount_point)
+            else:
+                raise exception.WindowsCloudbaseInitException(
+                    "Failed to get volume name for mount point: %s. "
+                    "Error: %%r" % mount_point)
+
+        volume_path_names_len = wintypes.DWORD(100)
+        while True:
+            volume_path_names = ctypes.create_unicode_buffer(
+                volume_path_names_len.value)
+            if not kernel32.GetVolumePathNamesForVolumeNameW(
+                    volume_name, volume_path_names, volume_path_names_len,
+                    ctypes.byref(volume_path_names_len)):
+                if kernel32.GetLastError() == self.ERROR_MORE_DATA:
+                    continue
+                else:
+                    raise exception.WindowsCloudbaseInitException(
+                        "Failed to get path names for volume name: %s."
+                        "Error: %%r" % volume_name.value)
+            return [n for n in volume_path_names[
+                :volume_path_names_len.value - 1].split('\0') if n]
+
     def generate_random_password(self, length):
         while True:
             pwd = super(WindowsUtils, self).generate_random_password(length)
@@ -1079,7 +1254,7 @@ class WindowsUtils(base.BaseOSUtils):
 
         return values
 
-    def _get_logical_drives(self):
+    def get_logical_drives(self):
         buf_size = self.MAX_PATH
         buf = ctypes.create_unicode_buffer(buf_size + 1)
         buf_len = kernel32.GetLogicalDriveStringsW(buf_size, buf)
@@ -1090,7 +1265,7 @@ class WindowsUtils(base.BaseOSUtils):
         return self._split_str_buf_list(buf, buf_len)
 
     def get_cdrom_drives(self):
-        drives = self._get_logical_drives()
+        drives = self.get_logical_drives()
         return [d for d in drives if kernel32.GetDriveTypeW(d) ==
                 self.DRIVE_CDROM]
 
@@ -1322,3 +1497,80 @@ class WindowsUtils(base.BaseOSUtils):
             raise exception.CloudbaseInitException(
                 "The given timezone name is unrecognised: %r" % timezone_name)
         timezone.Timezone(windows_name).set(self)
+
+    def get_page_files(self):
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            'SYSTEM\\CurrentControlSet\\Control\\'
+                            'Session Manager\\Memory Management') as key:
+            values = winreg.QueryValueEx(key, 'PagingFiles')[0]
+
+        page_files = []
+        for value in values:
+            v = value.split(" ")
+            path = v[0]
+            min_size_mb = int(v[1]) if len(v) > 1 else 0
+            max_size_mb = int(v[2]) if len(v) > 2 else 0
+            page_files.append((path, min_size_mb, max_size_mb))
+        return page_files
+
+    def set_page_files(self, page_files):
+        values = []
+        for path, min_size_mb, max_size_mb in page_files:
+            values.append("%s %d %d" % (path, min_size_mb, max_size_mb))
+
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            'SYSTEM\\CurrentControlSet\\Control\\'
+                            'Session Manager\\Memory Management',
+                            0, winreg.KEY_ALL_ACCESS) as key:
+            winreg.SetValueEx(key, 'PagingFiles', 0,
+                              winreg.REG_MULTI_SZ, values)
+
+    def is_real_time_clock_utc(self):
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            'SYSTEM\\CurrentControlSet\\Control\\'
+                            'TimeZoneInformation') as key:
+            try:
+                utc = winreg.QueryValueEx(key, 'RealTimeIsUniversal')[0]
+                return utc != 0
+            except FileNotFoundError:
+                return False
+
+    def set_real_time_clock_utc(self, utc):
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            'SYSTEM\\CurrentControlSet\\Control\\'
+                            'TimeZoneInformation',
+                            0, winreg.KEY_ALL_ACCESS) as key:
+            winreg.SetValueEx(key, 'RealTimeIsUniversal', 0,
+                              winreg.REG_DWORD, 1 if utc else 0)
+
+    def enable_trim(self, enable):
+        args = ["fsutil.exe", "behavior", "set", "disabledeletenotify",
+                "0" if enable else "1"]
+        (out, err, ret_val) = self.execute_system32_process(args)
+        if ret_val:
+            raise exception.CloudbaseInitException(
+                'TRIM configurating failed.\nOutput: %(out)s\nError:'
+                ' %(err)s' % {'out': out, 'err': err})
+
+    def check_dotnet_is_installed(self, version):
+        # See: https://msdn.microsoft.com/en-us/library/hh925568(v=vs.110).aspx
+        if str(version) != "4":
+            raise exception.CloudbaseInitException(
+                "Only checking for version 4 is supported at the moment")
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 'SOFTWARE\\'
+                                'Microsoft\\NET Framework Setup\\NDP\\'
+                                'v%s\\Full' % version) as key:
+                return winreg.QueryValueEx(key, 'Install')[0] != 0
+        except WindowsError as ex:
+            if ex.winerror == 2:
+                return False
+            else:
+                raise
+
+    def get_file_version(self, path):
+        info = win32api.GetFileVersionInfo(path, '\\')
+        ms = info['FileVersionMS']
+        ls = info['FileVersionLS']
+        return (win32api.HIWORD(ms), win32api.LOWORD(ms),
+                win32api.HIWORD(ls), win32api.LOWORD(ls))

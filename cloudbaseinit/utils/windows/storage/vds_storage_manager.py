@@ -135,3 +135,13 @@ class VDSStorageManager(base.BaseStorageManager):
             packs = self._query_packs(provider)
             for pack in packs:
                 self._extend_volumes(pack, volume_indexes)
+
+    def get_san_policy(self):
+        svc = vds.load_vds_service()
+        svc_san = svc.QueryInterface(vds.IVdsServiceSAN)
+        return svc_san.GetSANPolicy()
+
+    def set_san_policy(self, san_policy):
+        svc = vds.load_vds_service()
+        svc_san = svc.QueryInterface(vds.IVdsServiceSAN)
+        svc_san.SetSANPolicy(san_policy)

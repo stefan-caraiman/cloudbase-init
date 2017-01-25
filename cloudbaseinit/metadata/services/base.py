@@ -137,6 +137,9 @@ class BaseMetadataService(object):
         in the namedtuple defined above.
         """
 
+    def get_admin_username(self):
+        pass
+
     def get_admin_password(self):
         pass
 
@@ -149,6 +152,15 @@ class BaseMetadataService(object):
         return False
 
     def post_password(self, enc_password_b64):
+        pass
+
+    def get_winrm_listeners_configuration(self):
+        pass
+
+    def get_vm_agent_package_provisioning_data(self):
+        pass
+
+    def get_server_certs(self):
         pass
 
     def get_client_auth_certs(self):
@@ -182,6 +194,31 @@ class BaseMetadataService(object):
             is True.
         """
         return False
+
+    def provisioning_started(self):
+        pass
+
+    def provisioning_completed(self):
+        pass
+
+    def provisioning_failed(self):
+        pass
+
+    @property
+    def can_post_rdp_cert_thumbprint(self):
+        return False
+
+    def post_rdp_cert_thumbprint(self, thumbprint):
+        pass
+
+    def get_kms_host(self):
+        pass
+
+    def get_use_avma_licensing(self):
+        pass
+
+    def get_enable_automatic_updates(self):
+        pass
 
 
 class BaseHTTPMetadataService(BaseMetadataService):

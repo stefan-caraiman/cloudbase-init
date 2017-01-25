@@ -54,6 +54,15 @@ class BaseOSUtils(object):
     def create_user(self, username, password, password_expires=False):
         raise NotImplementedError()
 
+    def rename_user(self, username, new_username):
+        raise NotImplementedError()
+
+    def enum_users(self):
+        raise NotImplementedError()
+
+    def is_builtin_admin(self, username):
+        raise NotImplementedError()
+
     def set_user_password(self, username, password, password_expires=False):
         raise NotImplementedError()
 
@@ -98,6 +107,9 @@ class BaseOSUtils(object):
                          metric):
         raise NotImplementedError()
 
+    def get_os_version(self):
+        raise NotImplementedError()
+
     def check_os_version(self, major, minor, build=0):
         raise NotImplementedError()
 
@@ -126,10 +138,47 @@ class BaseOSUtils(object):
         """Set the username and password for a given service."""
         raise NotImplementedError()
 
+    def create_service(self, service_name, display_name, path, start_mode,
+                       username=None, password=None):
+        raise NotImplementedError()
+
+    def delete_service(self, service_name):
+        raise NotImplementedError()
+
+    def get_service_status(self, service_name):
+        raise NotImplementedError()
+
+    def check_service_exists(self, service_name):
+        raise NotImplementedError()
+
+    def get_service_start_mode(self, service_name):
+        raise NotImplementedError()
+
+    def set_service_start_mode(self, service_name, start_mode):
+        raise NotImplementedError()
+
+    def start_service(self, service_name):
+        raise NotImplementedError()
+
+    def stop_service(self, service_name, wait=False):
+        raise NotImplementedError()
+
     def get_service_username(self, service_name):
         """Retrieve the username under which a service runs."""
         raise NotImplementedError()
 
     def get_current_user(self):
         """Retrieve the username under which the current thread runs."""
+        raise NotImplementedError()
+
+    def is_real_time_clock_utc(self):
+        raise NotImplementedError()
+
+    def set_real_time_clock_utc(self, utc):
+        raise NotImplementedError()
+
+    def enable_trim(self, enable):
+        raise NotImplementedError()
+
+    def get_file_version(self, path):
         raise NotImplementedError()

@@ -42,8 +42,19 @@ class NTPClientPlugin(base.BasePlugin):
         return list(map(socket.inet_ntoa, chunks))
 
     def execute(self, service, shared_data):
+        reboot_required = False
+        osutils = osutils_factory.get_os_utils()
+
+        if osutils.is_real_time_clock_utc() != CONF.real_time_clock_utc:
+            osutils.set_real_time_clock_utc(CONF.real_time_clock_utc)
+            LOG.info('RTC set to UTC: %s', CONF.real_time_clock_utc)
+            reboot_required = True
+
+        if CONF.ntp_enable_service:
+            self.verify_time_service(osutils)
+            LOG.info('NTP client service enabled')
+
         if CONF.ntp_use_dhcp_config:
-            osutils = osutils_factory.get_os_utils()
             dhcp_hosts = osutils.get_dhcp_hosts_in_use()
 
             ntp_option_data = None
@@ -61,10 +72,7 @@ class NTPClientPlugin(base.BasePlugin):
                 return base.PLUGIN_EXECUTE_ON_NEXT_BOOT, False
 
             ntp_hosts = self._unpack_ntp_hosts(ntp_option_data)
-
-            self.verify_time_service(osutils)
             osutils.set_ntp_client_config(ntp_hosts)
-
             LOG.info('NTP client configured. Server(s): %s' % ntp_hosts)
 
-        return base.PLUGIN_EXECUTION_DONE, False
+        return base.PLUGIN_EXECUTION_DONE, reboot_required
