@@ -30,6 +30,7 @@ OPEN_EXISTING = 3
 
 INVALID_HANDLE_VALUE = wintypes.HANDLE(-1)
 
+
 class GUID(ctypes.Structure):
     _fields_ = [
         ("data1", wintypes.DWORD),

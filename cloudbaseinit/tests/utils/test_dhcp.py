@@ -146,7 +146,7 @@ class DHCPUtilsTests(unittest.TestCase):
             socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         mock_socket().bind.assert_called_once_with(('', 68))
         mock_socket().settimeout.assert_called_once_with(5)
-        mock_socket().connect.assert_called_once_with(('fake host', 67))
+        mock_socket().connect.assert_called_once_with(('fake host', 8000))
         mock_socket().getsockname.assert_called_once_with()
         mock_get_mac_address_by_local_ip.assert_called_once_with(
             'fake local ip')
@@ -154,7 +154,8 @@ class DHCPUtilsTests(unittest.TestCase):
                                                            'fake mac',
                                                            ['fake option'],
                                                            'cloudbase-init')
-        mock_socket().send.assert_called_once_with('fake data')
+        mock_socket().sendto.assert_called_once_with('fake data',
+                                                     ('fake host', 67))
         mock_socket().recv.assert_called_once_with(1024)
         mock_parse_dhcp_reply.assert_called_once_with(mock_socket().recv(),
                                                       'fake int')

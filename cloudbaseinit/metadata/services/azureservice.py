@@ -107,7 +107,8 @@ class AzureService(base.BaseHTTPMetadataService):
                 path, data_xml, headers=all_headers))
 
         if parse_xml:
-            return untangle.parse(six.StringIO(data.decode()))
+            decoded_data = six.StringIO(data.decode())
+            return untangle.parse(decoded_data)
         else:
             return data
 
@@ -199,7 +200,7 @@ class AzureService(base.BaseHTTPMetadataService):
     def _post_health_status(self, state, sub_status=None, description=None):
         health_report_xml = self._get_health_report_xml(
             state, sub_status, description)
-        LOG.debug("Heath data: %s", health_report_xml)
+        LOG.debug("Health data: %s", health_report_xml)
         self._wire_server_request(
             "machine?comp=health", health_report_xml, parse_xml=False)
 
@@ -420,9 +421,3 @@ class AzureService(base.BaseHTTPMetadataService):
         except Exception as ex:
             LOG.exception(ex)
             return False
-
-
-        # self._get_hosting_environment()
-        # self._get_shared_config()
-        # self._get_extensions_config()
-        # self._get_full_config()

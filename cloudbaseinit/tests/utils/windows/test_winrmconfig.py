@@ -338,11 +338,10 @@ class WinRMConfigTests(unittest.TestCase):
             '<p:Listener xmlns:p="http://schemas.microsoft.com/'
             'wbem/wsman/1/config/listener.xsd">'
             '<p:Enabled>%(enabled)s</p:Enabled>'
-            '<p:CertificateThumbPrint>%(cert_thumbprint)s'
+            '<p:CertificateThumbPrint>'
             '</p:CertificateThumbPrint>'
             '<p:URLPrefix>wsman</p:URLPrefix>'
-            '</p:Listener>' % {"enabled": True,
-                               "cert_thumbprint": None})
+            '</p:Listener>' % {"enabled": True})
 
     @mock.patch('xml.etree.ElementTree.fromstring')
     @mock.patch('xml.etree.ElementTree.tostring')

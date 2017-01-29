@@ -23,6 +23,8 @@ except ImportError:
 
 from cloudbaseinit.utils import x509constants
 
+MODPATH = "cloudbaseinit.utils.windows.x509"
+
 
 class CryptoAPICertManagerTests(unittest.TestCase):
 
@@ -34,14 +36,14 @@ class CryptoAPICertManagerTests(unittest.TestCase):
 
         self._module_patcher.start()
 
-        self.x509 = importlib.import_module("cloudbaseinit.utils.windows.x509")
+        self.x509 = importlib.import_module(MODPATH)
         self._x509_manager = self.x509.CryptoAPICertManager()
 
     def tearDown(self):
         self._module_patcher.stop()
 
-    @mock.patch('cloudbaseinit.utils.windows.x509.free')
-    @mock.patch('cloudbaseinit.utils.windows.x509.malloc')
+    @mock.patch(MODPATH + '.free')
+    @mock.patch(MODPATH + '.malloc')
     @mock.patch('cloudbaseinit.utils.windows.cryptoapi.'
                 'CertGetCertificateContextProperty')
     def _test_get_cert_thumprint(self, mock_CertGetCertificateContextProperty,
@@ -141,14 +143,12 @@ class CryptoAPICertManagerTests(unittest.TestCase):
         self._test_generate_key(acquired_context=True,
                                 generate_key_ret_val=None)
 
-    @mock.patch('cloudbaseinit.utils.windows.x509.free')
-    @mock.patch('cloudbaseinit.utils.windows.x509.malloc')
-    @mock.patch('cloudbaseinit.utils.windows.x509.CryptoAPICertManager'
-                '._add_system_time_interval')
-    @mock.patch('cloudbaseinit.utils.windows.x509.CryptoAPICertManager'
-                '._generate_key')
-    @mock.patch('cloudbaseinit.utils.windows.x509.CryptoAPICertManager'
-                '._get_cert_thumprint')
+    @mock.patch(MODPATH + '.free')
+    @mock.patch(MODPATH + '.malloc')
+    @mock.patch(MODPATH + '.CryptoAPICertManager._get_cert_str')
+    @mock.patch(MODPATH + '.CryptoAPICertManager._add_system_time_interval')
+    @mock.patch(MODPATH + '.CryptoAPICertManager._generate_key')
+    @mock.patch(MODPATH + '.CryptoAPICertManager._get_cert_thumprint')
     @mock.patch('uuid.uuid4')
     @mock.patch('cloudbaseinit.utils.windows.cryptoapi.'
                 'CertStrToName')
@@ -188,6 +188,7 @@ class CryptoAPICertManagerTests(unittest.TestCase):
                                       mock_uuid4, mock_get_cert_thumprint,
                                       mock_generate_key,
                                       mock_add_system_time_interval,
+                                      mock_get_cert_str,
                                       mock_malloc, mock_free, certstr,
                                       certificate, enhanced_key, store_handle,
                                       context_to_store):
@@ -239,7 +240,8 @@ class CryptoAPICertManagerTests(unittest.TestCase):
                 mock_CertCreateSelfSignCertificate())
             mock_free.assert_called_once_with(mock_cast())
 
-            self.assertEqual(mock_get_cert_thumprint.return_value, response)
+            self.assertEqual((mock_get_cert_thumprint.return_value,
+                             mock_get_cert_str.return_value), response)
 
         mock_generate_key.assert_called_once_with('fake_name', True)
 
@@ -320,9 +322,8 @@ class CryptoAPICertManagerTests(unittest.TestCase):
         response = self._x509_manager._get_cert_base64(fake_cert_data)
         self.assertEqual('fake cert', response)
 
-    @mock.patch('cloudbaseinit.utils.windows.x509.free')
-    @mock.patch('cloudbaseinit.utils.windows.x509.CryptoAPICertManager'
-                '._get_cert_thumprint')
+    @mock.patch(MODPATH + '.free')
+    @mock.patch(MODPATH + '.CryptoAPICertManager._get_cert_thumprint')
     @mock.patch('cloudbaseinit.utils.windows.cryptoapi.'
                 'CertCloseStore')
     @mock.patch('cloudbaseinit.utils.windows.cryptoapi.'
