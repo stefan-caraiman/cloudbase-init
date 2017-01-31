@@ -189,6 +189,26 @@ class GlobalOptions(conf_base.Options):
                 'cloud_config_plugins', default=[],
                 help='List which contains the name of the cloud config '
                      'plugins ordered by priority.'),
+            cfg.ListOpt(
+                'page_file_volume_labels', default=[],
+                help='Labels of volumes on which a Windows page file needs to '
+                     'be created. E.g.: "Temporary Storage"'),
+            cfg.ListOpt(
+                'page_file_volume_mount_points', default=[],
+                help='Volume mount points on which a Windows page file needs '
+                     'to be created. E.g.: '
+                     '"\\\\?\\GLOBALROOT\\device\\Harddisk1\\Partition1\\"'),
+            cfg.StrOpt(
+                'swap_policy',
+                default=constant.SWAP_AUTOMATIC,
+                choices=constant.SWAP_POLICY_OPTIONS,
+                help='Control the behaviour of the page file system. '
+                'If this option is set to `automatic`, the page file system'
+                'will be set on `?:\pagefile.sys`, and will enable the page '
+                'file system.'
+                'If it is set on `disabled`, the created page file system will'
+                ' be disabled on the given volume point by setting the flags '
+                ' on 0. E.g.: "C:\pagefile.sys 0 0"'),
         ]
 
         self._cli_options = [
