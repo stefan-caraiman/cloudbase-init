@@ -466,10 +466,13 @@ class WindowsUtils(base.BaseOSUtils):
             usernames += [u["name"] for u in users_info]
             if not resume_handle:
                 return usernames
+            else:
+                raise exception.CloudbaseInitException(
+                    "Enumerating users failed")
 
     def is_builtin_admin(self, username):
         sid = self.get_user_sid(username)
-        return sid and sid.startswith(u"S-1-5-") and sid.endswith(u"-500")
+        return sid.startswith(u"S-1-5-") and sid.endswith(u"-500") and bool(sid)
 
     def _get_user_info(self, username, level):
         try:

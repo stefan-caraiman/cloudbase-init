@@ -23,6 +23,7 @@ try:
 except ImportError:
     import mock
 import six
+import win32service
 
 from cloudbaseinit import conf as cloudbaseinit_conf
 from cloudbaseinit import exception
@@ -301,6 +302,146 @@ class TestWindowsUtils(testutils.CloudbaseInitTestBase):
     def test_get_user_sid_and_domain_no_return_value(self):
         self._test_get_user_sid_and_domain(ret_val=None, last_error=100)
 
+    @mock.patch('win32net.NetUserSetInfo')
+    def _test_rename_user(self, mock_net_user, err):
+        if err:
+            mock_net_user.side_effect = self._win32net_mock.error(
+                self._winutils.NERR_UserNotFound)
+            self.assertRaises(exception.ItemNotFoundException,
+                              self._winutils.rename_user, "fake useranme",
+                              "fake new username")
+
+            mock_net_user.side_effect = self._win32net_mock.error(0, "fake data",
+                                                                  "fake message")
+            self.assertRaises(exception.CloudbaseInitException,
+                              self._winutils.rename_user, "fake useranme",
+                              "fake new username")
+        else:
+            user_info = {
+                "name": "fake new username"
+            }
+            self._winutils.rename_user("fake username", "fake new username")
+            mock_net_user.assert_called_once_with(None, "fake username", 0, user_info)
+
+    def test_rename_user(self):
+        self._test_rename_user(err=False)
+
+    def test_rename_user(self):
+        self._test_rename_user(err=True)
+
+
+    def _test_enum_user(self, err):
+        stop_exp = self._win32net_mock.error()
+        stop_exp.args = (0, 0, 0)
+        if err:
+            self._win32net_mock.NetUserEnum.side_effect = stop_exp
+
+            self.assertRaises(exception.CloudbaseInitException,
+                              self._winutils.enum_users)
+        else:
+            self._win32net_mock.NetUserEnum.return_value = (
+                [{"name": "fake user 1"}, {"name": "fake user 2"}],
+                2, 0
+            )
+
+            response = self._winutils.enum_users()
+            self.assertEqual(set(["fake user 1", "fake user 2"]),
+                             set(response))
+
+            self._win32net_mock.NetUserEnum.return_value = (
+                [{"name": "fake user 1"}, {"name": "fake user 2"}],
+                2, 1
+            )
+            self.assertRaises(exception.CloudbaseInitException,
+                              self._winutils.enum_users)
+            
+    def test_enum_user(self):
+        self._test_enum_user(err=False)
+
+    def test_enum_user_exception(self):
+        self._test_enum_user(err=True)
+
+    @mock.patch('cloudbaseinit.osutils.windows.'
+                'WindowsUtils.get_user_sid')
+    def test_is_builtin_admin(self, mock_get_user_sid):
+        mock_get_user_sid.side_effect = [
+            "S-1-5-F-A-K-E-500", "", "S-1-5-F-F-A-K-E",
+            "F-A-K-E-500"
+        ]
+
+        response = self._winutils.is_builtin_admin("fake_username")
+        self.assertEqual(response, True)
+
+        response = self._winutils.is_builtin_admin("fake_username")
+        print "R ", response
+
+        self.assertEqual(response, False)
+
+        response = self._winutils.is_builtin_admin("fake_username")
+        print "R ", response
+        self.assertEqual(response, False)
+
+        response = self._winutils.is_builtin_admin("fake_username")
+        print "R ", response
+        self.assertEqual(response, False)
+
+    def _test_get_win32_start_type(self, err):
+        if err:
+            self.assertRaises(
+                exception.InvalidStateException,
+                self._winutils._get_win32_start_type, "fake state")
+        else:
+            for key, value in self._winutils._SERVICE_START_TYPE_MAP.items():
+                response = self._winutils._get_win32_start_type(key)
+                self.assertEqual(response, value)
+
+    def test_get_win32_start_type(self):
+        self._test_get_win32_start_type(err=False)
+
+    def test_get_win32_start_type_exception(self):
+        self._test_get_win32_start_type(err=True)
+
+    @mock.patch('cloudbaseinit.osutils.windows.WindowsUtils'
+                '._get_service_control_manager')   
+    @mock.patch('cloudbaseinit.osutils.windows.WindowsUtils'
+                '._get_win32_start_type')
+    def test_create_service(self, mock_get_start_type, mock_manager):
+        service_name = "fake name"
+        display_name = "fake display name"
+        path = "fake/path"
+        start_mode = "fake mode"
+        username = "fake username"
+        password = "fake password"
+
+        mock_hscm = mock.MagicMock()
+        mock_hs = mock.MagicMock()
+        mock_get_start_type.return_value = "fake start"
+        mock_manager().__enter__.return_value = mock_hscm
+        self._win32service_mock.CreateService.return_value = mock_hs
+
+        self._winutils.create_service(service_name, display_name, path, start_mode,
+                                      username, password)
+
+        self._win32service_mock.CreateService.assert_called_once_with(
+            mock_hscm, service_name, display_name, 
+            self._win32service_mock.SERVICE_ALL_ACCESS,
+            self._win32service_mock.SERVICE_WIN32_OWN_PROCESS,
+            "fake start", self._win32service_mock.SERVICE_ERROR_NORMAL,
+            path, None, False, None, username, password, 
+        )
+
+        self._win32service_mock.CloseServiceHandle.assert_called_once_with(mock_hs)
+
+    @mock.patch('cloudbaseinit.osutils.windows.WindowsUtils'
+                '._get_service_handle')
+    def test_delete_service(self, mock_service_handle):
+        mock_hs = mock.MagicMock()
+        mock_service_handle().__enter__.return_value = mock_hs
+        self._winutils.delete_service("fake name")
+        self._win32service_mock.DeleteService.assert_called_with(mock_hs)
+        mock_service_handle.assert_called_with(
+            "fake name", self._win32service_mock.SERVICE_ALL_ACCESS)
+
     @mock.patch('cloudbaseinit.osutils.windows'
                 '.Win32_LOCALGROUP_MEMBERS_INFO_3')
     def _test_add_user_to_local_group(self,
@@ -325,9 +466,9 @@ class TestWindowsUtils(testutils.CloudbaseInitTestBase):
 
             netapi32.NetLocalGroupAddMembers.assert_called_with(
                 0, six.text_type(group_name), 3,
-                self._ctypes_mock.addressof.return_value, 1)
+                self._ctypes_mock.pointer.return_value, 1)
 
-            self._ctypes_mock.addressof.assert_called_once_with(lmi)
+            self._ctypes_mock.pointer.assert_called_once_with(lmi)
             self.assertEqual(lmi.lgrmi3_domainandname,
                              six.text_type(self._USERNAME))
 
@@ -879,16 +1020,6 @@ class TestWindowsUtils(testutils.CloudbaseInitTestBase):
         ret_vals = [[1], [7]]
         self._test_wait_for_boot_completion(ret_vals=ret_vals)
 
-    def test_get_service(self):
-        conn = self._wmi_mock.WMI
-        conn.return_value.Win32_Service.return_value = ['fake name']
-
-        response = self._winutils._get_service('fake name')
-
-        conn.assert_called_with(moniker='//./root/cimv2')
-        conn.return_value.Win32_Service.assert_called_with(Name='fake name')
-        self.assertEqual('fake name', response)
-
     @mock.patch('cloudbaseinit.osutils.windows.WindowsUtils'
                 '._get_service_handle')
     def test_check_service(self, mock_get_service_handle):
@@ -1035,98 +1166,117 @@ class TestWindowsUtils(testutils.CloudbaseInitTestBase):
     def test_reset_service_password_domain_account(self):
         self._test_reset_service_password(service_exists=True,
                                           service_username=".\\username")
-
+    @mock.patch('win32service.QueryServiceStatusEx')
     @mock.patch('cloudbaseinit.osutils.windows.WindowsUtils'
-                '._get_service')
-    def test_get_service_status(self, mock_get_service):
-        mock_service = mock.MagicMock()
-        mock_get_service.return_value = mock_service
+                '._get_service_handle')
+    def test_get_service_status(self, mock_get_service_handle,
+                                 mock_query_service):
+        mock_handler = mock.MagicMock()
+        mock_context_manager = mock.MagicMock()
+        mock_context_manager.__enter__.return_value = mock_handler
+        mock_get_service_handle.return_value = mock_context_manager
+        for key, value in self._winutils._SERVICE_STATUS_MAP.items():
+            mock_query_service.return_value = {"CurrentState": key}
+            response = self._winutils.get_service_status('fake name')
 
-        response = self._winutils.get_service_status('fake name')
+            mock_query_service.assert_called_with(mock_handler)
+            self.assertEqual(
+                self._winutils._SERVICE_STATUS_MAP.get(key), 
+                response)
+        
 
-        self.assertEqual(mock_service.State, response)
-
+    @mock.patch('win32service.QueryServiceConfig')
     @mock.patch('cloudbaseinit.osutils.windows.WindowsUtils'
-                '._get_service')
-    def test_get_service_start_mode(self, mock_get_service):
-        mock_service = mock.MagicMock()
-        mock_get_service.return_value = mock_service
+                '._get_service_handle')
+    def test_get_service_start_mode(self, mock_get_service_handle,
+                                    mock_query_service):
+        mock_handler = mock.MagicMock()
+        mock_context_manager = mock.MagicMock()
+        mock_context_manager.__enter__.return_value = mock_handler
+        mock_get_service_handle.return_value = mock_context_manager
 
-        response = self._winutils.get_service_start_mode('fake name')
+        for key, value in self._winutils._SERVICE_START_TYPE_MAP.items():
+            
+            mock_query_service.return_value = ["fake_data", value]
+            response = self._winutils.get_service_start_mode('fake name')
+            mock_query_service.assert_called_with(mock_handler)
+            expected = {v: k for k, v in 
+                        self._winutils._SERVICE_START_TYPE_MAP.items()}.get(value)
+            self.assertEqual(expected, response)
 
-        self.assertEqual(mock_service.StartMode, response)
-
+    @mock.patch('win32service.ChangeServiceConfig')
     @mock.patch('cloudbaseinit.osutils.windows.WindowsUtils'
-                '._get_service')
-    def _test_set_service_start_mode(self, mock_get_service, ret_val):
-        mock_service = mock.MagicMock()
-        mock_get_service.return_value = mock_service
-        mock_service.ChangeStartMode.return_value = (ret_val,)
+                '._get_service_handle')
+    def _test_set_service_start_mode(self, mock_get_service_handle,
+                                     mock_change_service, err):
+        mock_handler = mock.MagicMock()
+        mock_context_manager = mock.MagicMock()
+        mock_context_manager.__enter__.return_value = mock_handler
+        mock_get_service_handle.return_value = mock_context_manager
 
-        if ret_val != 0:
-            self.assertRaises(exception.CloudbaseInitException,
+        if err:
+            self.assertRaises(exception.InvalidStateException,
                               self._winutils.set_service_start_mode,
-                              'fake name', 'fake mode')
+                              "fake name", "fake state")
         else:
-            self._winutils.set_service_start_mode('fake name', 'fake mode')
+            for key, value in self._winutils._SERVICE_START_TYPE_MAP.items():
+                self._winutils.set_service_start_mode("fake name", key)
 
-        mock_service.ChangeStartMode.assert_called_once_with('fake mode')
+                mock_change_service.assert_called_with(
+                    mock_handler, self._win32service_mock.SERVICE_NO_CHANGE,
+                    value, self._win32service_mock.SERVICE_NO_CHANGE,
+                    None, None, False, None, None, None, None)
 
     def test_set_service_start_mode(self):
-        self._test_set_service_start_mode(ret_val=0)
+        self._test_set_service_start_mode(err=False)
 
     def test_set_service_start_mode_exception(self):
-        self._test_set_service_start_mode(ret_val=1)
+        self._test_set_service_start_mode(err=True)
 
+    @mock.patch('win32service.StartService')
     @mock.patch('cloudbaseinit.osutils.windows.WindowsUtils'
-                '._get_service')
-    def _test_start_service(self, mock_get_service, ret_val):
-        mock_service = mock.MagicMock()
-        mock_get_service.return_value = mock_service
-        mock_service.StartService.return_value = (ret_val,)
+                '._get_service_handle')
+    def test_start_service(self,  mock_get_service_handle,
+                           mock_start_service):
+        mock_handler = mock.MagicMock()
+        mock_context_manager = mock.MagicMock()
+        mock_context_manager.__enter__.return_value = mock_handler
+        mock_get_service_handle.return_value = mock_context_manager
 
-        if ret_val != 0:
-            self.assertRaises(exception.CloudbaseInitException,
-                              self._winutils.start_service,
-                              'fake name')
-        else:
-            with self.snatcher:
-                self._winutils.start_service('fake name')
-            self.assertEqual(["Starting service fake name"],
-                             self.snatcher.output)
+        self._winutils.start_service("fake name")
 
-        mock_service.StartService.assert_called_once_with()
+        mock_start_service.assert_called_once_with(mock_handler, "fake name")
 
-    def test_start_service(self):
-        self._test_set_service_start_mode(ret_val=0)
-
-    def test_start_service_exception(self):
-        self._test_set_service_start_mode(ret_val=1)
-
+    @mock.patch('time.sleep')
+    @mock.patch('win32service.QueryServiceStatusEx')
+    @mock.patch('win32service.ControlService')
     @mock.patch('cloudbaseinit.osutils.windows.WindowsUtils'
-                '._get_service')
-    def _test_stop_service(self, mock_get_service, ret_val):
-        mock_service = mock.MagicMock()
-        mock_get_service.return_value = mock_service
-        mock_service.StopService.return_value = (ret_val,)
+                '._get_service_handle')
+    def _test_stop_service(self, mock_get_service_handle,
+                           mock_control_service, mock_query_service,
+                           mock_sleep, wait):
+        mock_handler = mock.MagicMock()
+        mock_context_manager = mock.MagicMock()
+        mock_context_manager.__enter__.return_value = mock_handler
+        mock_get_service_handle.return_value = mock_context_manager
 
-        if ret_val != 0:
-            self.assertRaises(exception.CloudbaseInitException,
-                              self._winutils.stop_service,
-                              'fake name')
-        else:
-            with self.snatcher:
-                self._winutils.stop_service('fake name')
-            self.assertEqual(["Stopping service fake name"],
-                             self.snatcher.output)
+        mock_query_service.side_effect = [ 
+            {"CurrentState" : "fake state"},
+            {"CurrentState" : self._win32service_mock.SERVICE_STOPPED}  
+        ]
 
-        mock_service.StopService.assert_called_once_with()
+        self._winutils.stop_service("fake name", wait)
+        mock_control_service.assert_called_once_with(mock_handler,
+            self._win32service_mock.SERVICE_CONTROL_STOP)
+        if wait:
+            mock_query_service.assert_called_with(mock_handler)
+            mock_sleep.assert_called_with(0.1)
 
     def test_stop_service(self):
-        self._test_stop_service(ret_val=0)
+        self._test_stop_service(wait=False)
 
-    def test_stop_service_exception(self):
-        self._test_stop_service(ret_val=1)
+    def test_stop_service_wait(self):
+        self._test_stop_service(wait=True)
 
     @mock.patch('cloudbaseinit.osutils.windows.WindowsUtils'
                 '.stop_service')
@@ -1284,6 +1434,41 @@ class TestWindowsUtils(testutils.CloudbaseInitTestBase):
     def test_get_volume_label_no_return_value(self):
         self._test_get_volume_label(None)
 
+
+    def _test_get_volume_path_names_by_mount_point(self, err):
+        if err:
+            self._windll_mock.kernel32.GetVolumeNameForVolumeMountPointW.return_value = None
+
+            self._windll_mock.kernel32.GetLastError.side_effect = [
+                self._winutils.ERROR_INVALID_NAME,
+                self._winutils.ERROR_INVALID_NAME,
+                "fake error"
+            ]
+
+            self.assertRaises(
+                exception.ItemNotFoundException,
+                self._winutils.get_volume_path_names_by_mount_point,
+                "fake mout moint")
+
+            self.assertRaises(
+                exception.ItemNotFoundException,
+                self._winutils.get_volume_path_names_by_mount_point,
+                "fake mout moint")
+
+            self.assertRaises(
+                exception.WindowsCloudbaseInitException,
+                self._winutils.get_volume_path_names_by_mount_point,
+                "fake mout moint")
+        else:
+            pass
+
+    def test_get_volume_path_names_by_mount_point(self):
+        self._test_get_volume_path_names_by_mount_point(err=False)
+
+    def test_get_volume_path_names_by_mount_point_exception(self):
+        self._test_get_volume_path_names_by_mount_point(err=True)
+
+
     @mock.patch('re.search')
     @mock.patch('cloudbaseinit.osutils.base.BaseOSUtils.'
                 'generate_random_password')
@@ -1309,9 +1494,9 @@ class TestWindowsUtils(testutils.CloudbaseInitTestBase):
         if buf_length is None:
             with self.assert_raises_windows_message(
                     "GetLogicalDriveStringsW failed: %r", last_error):
-                self._winutils._get_logical_drives()
+                self._winutils.get_logical_drives()
         else:
-            response = self._winutils._get_logical_drives()
+            response = self._winutils.get_logical_drives()
 
             self._ctypes_mock.create_unicode_buffer.assert_called_with(261)
             mock_get_drives.assert_called_with(260, mock_buf)
@@ -1324,7 +1509,7 @@ class TestWindowsUtils(testutils.CloudbaseInitTestBase):
         self._test_get_logical_drives(buf_length=2)
 
     @mock.patch('cloudbaseinit.osutils.windows.WindowsUtils.'
-                '_get_logical_drives')
+                'get_logical_drives')
     @mock.patch('cloudbaseinit.osutils.windows.kernel32')
     def test_get_cdrom_drives(self, mock_kernel32, mock_get_logical_drives):
         mock_get_logical_drives.return_value = ['drive']
