@@ -19,11 +19,13 @@ try:
 except ImportError:
     import mock
 
+from cloudbaseinit import conf as cloudbaseinit_conf
 from cloudbaseinit.plugins.common import base
 from cloudbaseinit.plugins.common import ntpclient
 from cloudbaseinit.tests import testutils
 from cloudbaseinit.utils import dhcp
 
+CONF = cloudbaseinit_conf.CONF
 
 class NTPClientPluginTests(unittest.TestCase):
 
@@ -40,7 +42,8 @@ class NTPClientPluginTests(unittest.TestCase):
     def _test_execute(self, mock_unpack_ntp_hosts,
                       mock_verify_time_service,
                       mock_get_dhcp_options, mock_get_os_utils,
-                      original_unpack_hosts, ntp_data, expected_hosts):
+                      original_unpack_hosts, ntp_data, expected_hosts,
+                      is_real_time=False, enable_service=True):
         # Set the side effect to the actual function, in order to
         # see the expected result.
         mock_unpack_ntp_hosts.side_effect = original_unpack_hosts
@@ -55,16 +58,27 @@ class NTPClientPluginTests(unittest.TestCase):
         mock_get_dhcp_options.return_value = mock_options_data
         mock_options_data.get.return_value = ntp_data
 
-        response = self._ntpclient.execute(service=mock_service,
-                                           shared_data='fake data')
+        reboot_required = False
+
+        if is_real_time:
+            mock_osutils.is_real_time_clock_utc.return_value = CONF.real_time_clock_utc
+        else:
+            mock_osutils.is_real_time_clock_utc.return_value = not CONF.real_time_clock_utc
+            reboot_required = True
+
+        with testutils.ConfPatcher('ntp_use_dhcp_config', enable_service):
+            response = self._ntpclient.execute(service=mock_service,
+                                               shared_data='fake data')
 
         mock_osutils.get_dhcp_hosts_in_use.assert_called_once_with()
         mock_get_dhcp_options.assert_called_once_with(
             'fake dhcp host', [dhcp.OPTION_NTP_SERVERS])
         mock_options_data.get.assert_called_once_with(dhcp.OPTION_NTP_SERVERS)
+        if enable_service:
+            mock_verify_time_service.assert_called_once_with(mock_osutils)
         if ntp_data:
             mock_unpack_ntp_hosts.assert_called_once_with(ntp_data)
-            self.assertEqual((base.PLUGIN_EXECUTION_DONE, False), response)
+            self.assertEqual((base.PLUGIN_EXECUTION_DONE, reboot_required), response)
             mock_verify_time_service.assert_called_once_with(mock_osutils)
             mock_osutils.set_ntp_client_config.assert_called_once_with(
                 expected_hosts)
@@ -82,7 +96,26 @@ class NTPClientPluginTests(unittest.TestCase):
             original_unpack_hosts=ntpclient.NTPClientPlugin._unpack_ntp_hosts,
             ntp_data=b'\xc0\xa8<\x8c',
             expected_hosts=['192.168.60.140'])
+    
+    def test_execute_2(self):
         self._test_execute(
             original_unpack_hosts=ntpclient.NTPClientPlugin._unpack_ntp_hosts,
             ntp_data=b'\xc0\xa8<\x8c\xc0\xa8<\x8e',
             expected_hosts=['192.168.60.140', '192.168.60.142'])
+
+    def ztest_execute_3(self):
+        self._test_execute(
+            original_unpack_hosts=ntpclient.NTPClientPlugin._unpack_ntp_hosts,
+            ntp_data=b'\xc0\xa8<\x8c\xc0\xa8<\x8e',
+            expected_hosts=['192.168.60.140', '192.168.60.142'],
+            is_real_time=True,
+            enable_service=False)
+
+    def ztest_execute_4(self):
+        self._test_execute(
+            original_unpack_hosts=ntpclient.NTPClientPlugin._unpack_ntp_hosts,
+            ntp_data=b'\xc0\xa8<\x8c\xc0\xa8<\x8e',
+            expected_hosts=['192.168.60.140', '192.168.60.142'],
+            is_real_time=True,
+            enable_service=False)
+

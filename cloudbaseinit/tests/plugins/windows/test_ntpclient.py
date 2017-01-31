@@ -34,7 +34,10 @@ class NTPClientPluginTests(unittest.TestCase):
     def test_set_ntp_trigger_mode(self):
         mock_osutils = mock.Mock()
         self._ntpclient._set_ntp_trigger_mode(mock_osutils)
-        mock_osutils.execute_system32_process.assert_called_once_with(
+        mock_osutils.execute_system32_process.has_calls(
+            ["sc.exe", "triggerinfo", ntpclient._W32TIME_SERVICE,
+             "delete"])
+        mock_osutils.execute_system32_process.has_calls(
             ["sc.exe", "triggerinfo", ntpclient._W32TIME_SERVICE,
              "start/networkon", "stop/networkoff"])
 
