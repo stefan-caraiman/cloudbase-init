@@ -267,9 +267,6 @@ class GlobalOptions(conf_base.Options):
                 help='Copies the userdata to the given file path. The path '
                      'can include environment variables that will be expanded,'
                      ' e.g. "%%SYSTEMDRIVE%%\\CloudbaseInit\\UserData.bin"'),
-            cfg.BoolOpt(
-                'enable_automatic_updates', default=False,
-                help='Enables automatic updates'),
             cfg.StrOpt(
                 'ephemeral_disk_volume_label', default=None,
                 help='Ephemeral disk volume label, e.g.: "Temporary Storage"'),
@@ -302,6 +299,12 @@ class GlobalOptions(conf_base.Options):
                          constant.CONFIGURATION_PASS_SERVICE,
                          constant.CONFIGURATION_PASS_ERROR_HANDLER],
                 help='The configuration pass name'),
+            cfg.StrOpt(
+                'enable_automatic_updates', default=None,
+                choices=[constant.AUTOMATIC_UPDATES_ENABLE,
+                         constant.DISABLE_UPDATES],
+                help='If not None, automatic updates is set to the given'
+                     ' value.'),
         ]
 
         self._cli_options = [
