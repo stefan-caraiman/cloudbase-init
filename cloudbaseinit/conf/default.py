@@ -227,6 +227,10 @@ class GlobalOptions(conf_base.Options):
                 help='Copies the userdata to the given file path. The path '
                      'can include environment variables that will be expanded,'
                      ' e.g. "%%SYSTEMDRIVE%%\\CloudbaseInit\\UserData.bin"'),
+            cfg.IntOpt(
+                'display_idle_timeout', default=0,
+                help='The idle timeout, in seconds, before powering off '
+                     'the display. Set 0 to leave the display always on'),
         ]
 
         self._cli_options = [
