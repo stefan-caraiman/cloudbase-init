@@ -201,6 +201,9 @@ class GlobalOptions(conf_base.Options):
                 'set_unique_boot_disk_id', default=True,
                 help='Sets a new random unique id on the boot disk to avoid '
                      'collisions'),
+            cfg.BoolOpt(
+                'rdp_set_keepalive', default=True,
+                help='Sets the RDP KeepAlive policy'),
         ]
 
         self._cli_options = [
