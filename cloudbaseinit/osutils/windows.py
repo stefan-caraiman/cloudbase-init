@@ -1574,3 +1574,9 @@ class WindowsUtils(base.BaseOSUtils):
         ls = info['FileVersionLS']
         return (win32api.HIWORD(ms), win32api.LOWORD(ms),
                 win32api.HIWORD(ls), win32api.LOWORD(ls))
+
+    def get_imc_sequence(self):
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            "SYSTEM\\CurrentControlSet\\Control\\"
+                            "InitialMachineConfig") as key:
+            return winreg.QueryValueEx(key, "Sequence")[0]

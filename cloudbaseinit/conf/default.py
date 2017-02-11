@@ -258,6 +258,18 @@ class GlobalOptions(conf_base.Options):
                 'metadata_report_provisioning_completed', default=False,
                 help='Reports to the metadata service that provisioning '
                      'completed or failed'),
+            cfg.StrOpt(
+                'instrumentation_class',
+                default=None,
+                help='Instrumentation class path'),
+            cfg.StrOpt(
+                'configuration_pass',
+                default=None,
+                choices=[constant.CONFIGURATION_PASS_SPECIALIZE,
+                         constant.CONFIGURATION_PASS_SETUP_COMPLETE,
+                         constant.CONFIGURATION_PASS_SERVICE,
+                         constant.CONFIGURATION_PASS_ERROR_HANDLER],
+                help='The configuration pass name'),
         ]
 
         self._cli_options = [

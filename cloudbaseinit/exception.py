@@ -59,6 +59,7 @@ class WindowsCloudbaseInitException(CloudbaseInitException):
         if error_code is None:
             error_code = ctypes.GetLastError()
         description = ctypes.FormatError(error_code)
+        self.error_code = error_code
         try:
             formatted_msg = msg % description
         except TypeError:

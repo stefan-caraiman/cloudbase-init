@@ -19,7 +19,9 @@ import sys
 from oslo_log import log as oslo_logging
 
 from cloudbaseinit import conf as cloudbaseinit_conf
+from cloudbaseinit import constant
 from cloudbaseinit import exception
+from cloudbaseinit.instrumentation import factory as instrumentation_factory
 from cloudbaseinit.metadata import factory as metadata_factory
 from cloudbaseinit.osutils import factory as osutils_factory
 from cloudbaseinit.plugins.common import base as plugins_base
@@ -49,7 +51,8 @@ class InitManager(object):
         osutils.set_config_value(plugin_name, status,
                                  self._get_plugins_section(instance_id))
 
-    def _exec_plugin(self, osutils, service, plugin, instance_id, shared_data):
+    def _exec_plugin(self, osutils, service, plugin, instrumentation,
+                     instance_id, shared_data):
         plugin_name = plugin.get_name()
 
         reboot_required = None
@@ -63,8 +66,8 @@ class InitManager(object):
         else:
             LOG.info('Executing plugin \'%s\'', plugin_name)
             try:
-                (status, reboot_required) = plugin.execute(service,
-                                                           shared_data)
+                (status, reboot_required) = instrumentation.instrument_call(
+                    plugin_name, lambda: plugin.execute(service, shared_data))
                 if instance_id is not None:
                     self._set_plugin_status(osutils, instance_id, plugin_name,
                                             status)
@@ -102,18 +105,18 @@ class InitManager(object):
                 LOG.info, 'Found new version of cloudbase-init %s')
             version.check_latest_version(log_version)
 
-    def _handle_plugins_stage(self, osutils, service, instance_id, stage):
+    def _handle_plugins_stage(self, osutils, service, instrumentation,
+                              instance_id, stage):
         plugins_shared_data = {}
         reboot_required = False
         stage_success = True
         plugins = plugins_factory.load_plugins(stage)
 
         LOG.info('Executing plugins for stage %r:', stage)
-
         for plugin in plugins:
             if self._check_plugin_os_requirements(osutils, plugin):
                 success, reboot_required = self._exec_plugin(
-                    osutils, service, plugin, instance_id,
+                    osutils, service, plugin, instrumentation, instance_id,
                     plugins_shared_data)
                 if not success:
                     stage_success = False
@@ -164,8 +167,50 @@ class InitManager(object):
         LOG.info("Process execution ended with exit code: %s", exit_code)
         sys.exit(exit_code)
 
+    @staticmethod
+    def _reboot(osutils, instrumentation):
+        try:
+            LOG.info("Rebooting")
+            instrumentation.instrument_call(
+                constant.INSTRUMENT_REBOOT,
+                lambda: osutils.reboot())
+        except Exception as ex:
+            LOG.error('reboot failed with error \'%s\'' % ex)
+
+    @staticmethod
+    def _provisioning_started(service, instrumentation):
+        if CONF.metadata_report_provisioning_started:
+            LOG.info("Reporting provisioning started")
+            instrumentation.instrument_call(
+                constant.INSTRUMENT_PROVISIONING_STARTED,
+                lambda: service.provisioning_started())
+
+    @staticmethod
+    def _provisioning_completed(service, instrumentation):
+        if service and CONF.metadata_report_provisioning_completed:
+            try:
+                LOG.info("Reporting provisioning completed")
+                instrumentation.instrument_call(
+                    constant.INSTRUMENT_PROVISIONING_COMPLETED,
+                    lambda: service.provisioning_completed())
+            except Exception as ex:
+                LOG.exception(ex)
+
+    @staticmethod
+    def _provisioning_failed(service, instrumentation):
+        if service and CONF.metadata_report_provisioning_completed:
+            try:
+                LOG.info("Reporting provisioning failed")
+                instrumentation.instrument_call(
+                    constant.INSTRUMENT_PROVISIONING_FAILED,
+                    lambda: service.provisioning_failed())
+            except Exception as ex:
+                LOG.exception(ex)
+
     def configure_host(self):
         osutils = osutils_factory.get_os_utils()
+        instrumentation = instrumentation_factory.load_instrumentation()
+        instrumentation.initialize()
 
         if CONF.reset_service_password and sys.platform == 'win32':
             self._reset_service_password_and_respawn(osutils)
@@ -174,14 +219,14 @@ class InitManager(object):
         osutils.wait_for_boot_completion()
 
         stage_success, reboot_required = self._handle_plugins_stage(
-            osutils, None, None,
+            osutils, None, instrumentation, None,
             plugins_base.PLUGIN_STAGE_PRE_NETWORKING)
 
         self._check_latest_version()
 
         if not (reboot_required and CONF.allow_reboot):
             stage_success, reboot_required = self._handle_plugins_stage(
-                osutils, None, None,
+                osutils, None, instrumentation, None,
                 plugins_base.PLUGIN_STAGE_PRE_METADATA_DISCOVERY)
 
         if not (reboot_required and CONF.allow_reboot):
@@ -194,44 +239,28 @@ class InitManager(object):
             LOG.info('Metadata service loaded: \'%s\'' %
                      service.get_name())
 
-            if CONF.metadata_report_provisioning_started:
-                LOG.info("Reporting provisioning started")
-                service.provisioning_started()
+            self._provisioning_started(service, instrumentation)
 
             instance_id = service.get_instance_id()
             LOG.debug('Instance id: %s', instance_id)
 
             try:
                 stage_success, reboot_required = self._handle_plugins_stage(
-                    osutils, service, instance_id,
+                    osutils, service, instrumentation, instance_id,
                     plugins_base.PLUGIN_STAGE_MAIN)
             finally:
                 service.cleanup()
 
-            if (CONF.metadata_report_provisioning_completed and
-                    not stage_success):
-                try:
-                    LOG.info("Reporting provisioning failed")
-                    service.provisioning_failed()
-                except Exception as ex:
-                    LOG.exception(ex)
+            if not stage_success:
+                self._provisioning_failed(service, instrumentation)
 
         if reboot_required and CONF.allow_reboot:
-            try:
-                LOG.info("Rebooting")
-                osutils.reboot()
-            except Exception as ex:
-                LOG.error('reboot failed with error \'%s\'' % ex)
+            self._reboot(osutils, instrumentation)
         else:
             LOG.info("Plugins execution done")
 
-            if (service and CONF.metadata_report_provisioning_completed and
-                    stage_success):
-                try:
-                    LOG.info("Reporting provisioning completed")
-                    service.provisioning_completed()
-                except Exception as ex:
-                    LOG.exception(ex)
+            if stage_success:
+                self._provisioning_completed(service, instrumentation)
 
             if CONF.stop_service_on_exit:
                 LOG.info("Stopping Cloudbase-Init service")
