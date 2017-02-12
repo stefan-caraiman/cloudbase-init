@@ -23,14 +23,23 @@ LOG = oslo_logging.getLogger(__name__)
 
 
 class RDPSettingsPlugin(base.BasePlugin):
-
     def execute(self, service, shared_data):
         LOG.info("Setting RDP KeepAlive: %s", CONF.rdp_set_keepalive)
         rdp.set_rdp_keepalive(CONF.rdp_set_keepalive)
+        return base.PLUGIN_EXECUTION_DONE, False
 
-        if service.can_post_rdp_cert_thumbprint:
+    def get_os_requirements(self):
+        return 'win32', (5, 2)
+
+
+class RDPPostCertificateThumbprintPlugin(base.BasePlugin):
+    def execute(self, service, shared_data):
+        if not service.can_post_rdp_cert_thumbprint:
+            LOG.info("The service does not provide the capability to post "
+                     "the RDP certificate thumbprint")
+        else:
             cert_thumb = rdp.get_rdp_certificate_thumbrint()
-            LOG.info("Porting RDP certificate thumprint: %s", cert_thumb)
+            LOG.info("Posting the RDP certificate thumprint: %s", cert_thumb)
             service.post_rdp_cert_thumbprint(cert_thumb)
 
         return base.PLUGIN_EXECUTION_DONE, False
