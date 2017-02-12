@@ -23,7 +23,20 @@ CONF = cloudbaseinit_conf.CONF
 LOG = oslo_logging.getLogger(__name__)
 
 
-class BootConfigPlugin(base.BasePlugin):
+class BootStatusPolicyPlugin(base.BasePlugin):
+    def execute(self, service, shared_data):
+        if CONF.bcd_boot_status_policy:
+            LOG.info("Configuring boot status policy: %s",
+                     CONF.bcd_boot_status_policy)
+            bootconfig.set_boot_status_policy(CONF.bcd_boot_status_policy)
+
+        return base.PLUGIN_EXECUTION_DONE, False
+
+    def get_os_requirements(self):
+        return 'win32', (6, 0)
+
+
+class BCDConfigPlugin(base.BasePlugin):
     @staticmethod
     def _set_unique_disk_id(phys_disk_path):
         # A unique disk ID is needed to avoid disk signature collisions
@@ -33,10 +46,6 @@ class BootConfigPlugin(base.BasePlugin):
             d.set_unique_id()
 
     def execute(self, service, shared_data):
-        if CONF.bcd_boot_status_policy:
-            LOG.info("Configure boot policy: %s", CONF.bcd_boot_status_policy)
-            bootconfig.set_boot_status_policy(CONF.bcd_boot_status_policy)
-
         if CONF.set_unique_boot_disk_id:
             if len(bootconfig.get_boot_system_devices()) == 1:
                 LOG.info("Configuring boot device")
