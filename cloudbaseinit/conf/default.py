@@ -189,6 +189,18 @@ class GlobalOptions(conf_base.Options):
                 'cloud_config_plugins', default=[],
                 help='List which contains the name of the cloud config '
                      'plugins ordered by priority.'),
+            cfg.StrOpt(
+                'bcd_boot_status_policy',
+                default=None,
+                choices=[constant.POLICY_IGNORE_ALL_FAILURES],
+                help='Sets the Windows BCD boot status policy'),
+            cfg.BoolOpt(
+                'bcd_enable_auto_recovery', default=False,
+                help='Enables or disables the BCD auto recovery'),
+            cfg.BoolOpt(
+                'set_unique_boot_disk_id', default=True,
+                help='Sets a new random unique id on the boot disk to avoid '
+                     'collisions'),
         ]
 
         self._cli_options = [
