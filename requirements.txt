@@ -15,3 +15,4 @@ pywin32;sys_platform=="win32"
 comtypes;sys_platform=="win32"
 wmi;sys_platform=="win32"
 tzlocal;sys_platform=="win32"
+git+https://github.com/stchris/untangle#egg=untangle
