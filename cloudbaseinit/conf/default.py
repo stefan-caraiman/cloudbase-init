@@ -217,6 +217,16 @@ class GlobalOptions(conf_base.Options):
             cfg.BoolOpt(
                 'rdp_set_keepalive', default=True,
                 help='Sets the RDP KeepAlive policy'),
+            cfg.BoolOpt(
+                'process_userdata', default=True,
+                help='Processes the userdata content based on the type, e.g. '
+                     'executing a PowerShell script'),
+            cfg.StrOpt(
+                'userdata_save_path',
+                default=None,
+                help='Copies the userdata to the given file path. The path '
+                     'can include environment variables that will be expanded,'
+                     ' e.g. "%%SYSTEMDRIVE%%\\CloudbaseInit\\UserData.bin"'),
         ]
 
         self._cli_options = [

@@ -136,3 +136,9 @@ class BaseOSUtils(object):
     def get_current_user(self):
         """Retrieve the username under which the current thread runs."""
         raise NotImplementedError()
+
+    def set_path_admin_acls(self, path):
+        raise NotImplementedError()
+
+    def take_path_ownership(self, path, username=None):
+        raise NotImplementedError()
