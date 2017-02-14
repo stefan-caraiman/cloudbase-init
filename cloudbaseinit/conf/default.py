@@ -189,6 +189,16 @@ class GlobalOptions(conf_base.Options):
                 'cloud_config_plugins', default=[],
                 help='List which contains the name of the cloud config '
                      'plugins ordered by priority.'),
+            cfg.BoolOpt(
+                'process_userdata', default=True,
+                help='Processes the userdata content based on the type, e.g. '
+                     'executing a PowerShell script'),
+            cfg.StrOpt(
+                'userdata_path',
+                default=None,
+                help='Copies the userdata to the given file path. The path '
+                     'can include environment variables that will be expanded,'
+                     ' e.g. "%%SYSTEMDRIVE%%\\CloudbaseInit\\UserData.bin"'),
         ]
 
         self._cli_options = [
