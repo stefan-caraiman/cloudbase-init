@@ -183,6 +183,12 @@ class BaseMetadataService(object):
         """
         return False
 
+    def get_kms_host(self):
+        pass
+
+    def get_use_avma_licensing(self):
+        pass
+
 
 class BaseHTTPMetadataService(BaseMetadataService):
 
