@@ -33,12 +33,18 @@ SERVICE_NAME_WAGUESTAGENT = "WindowsAzureGuestAgent"
 SERVICE_NAME_WA_TELEMETRY = "WindowsAzureTelemetryService"
 RDAGENT_FILENAME = "WaAppAgent.exe"
 
+GUEST_AGENT_FILENAME = "Microsoft.Azure.Agent.Windows.exe"
+NANO_VMAGENT_FILENAME = "WaSvc.exe"
+GUEST_AGENT_EVENTNAME = "Global\AzureAgentStopRequest"
+
 LOGMAN_TRACE_NOT_RUNNING = 0x80300104
 LOGMAN_TRACE_NOT_FOUND = 0x80300002
 
 GUEST_AGENT_ROOT_PATH = "WindowsAzure"
 PACKAGES_ROOT_PATH = "Packages"
 GUEST_AGENT_SOURCE_PATH = '$$\\OEM\GuestAgent'
+
+VM_AGENT_PACKAGE = "VmAgent_Nano.zip"
 
 
 class AzureGuestAgentPlugin(base.BasePlugin):
@@ -92,6 +98,35 @@ class AzureGuestAgentPlugin(base.BasePlugin):
             winreg.SetValueEx(
                 key, "VmProvisionedAt", 0, winreg.REG_SZ,
                 install_timestamp_str)
+
+    @staticmethod
+    def _configure_vm_agent(osutils, vm_agent_target_path):
+        vm_agent_zip_path = os.path.join(os.getenv("SystemDrive"), '\\',
+                                         "Windows", "NanoGuestAgent",
+                                         VM_AGENT_PACKAGE)
+        vm_agent_log_path = os.path.join(os.getenv("SystemDrive"), '\\',
+                                         GUEST_AGENT_ROOT_PATH, "Logs")
+        if not os.path.exists(vm_agent_log_path):
+            os.makedirs(vm_agent_log_path)
+        with zipfile.ZipFile(vm_agent_zip_path) as zf:
+            zf.extractall(vm_agent_target_path)
+        vm_agent_service_path = os.path.join(
+            vm_agent_target_path, NANO_VMAGENT_FILENAME)
+        vm_agent_service_path = ("{service_path} -name {agent_name} -ownLog "
+                                 "{log_path}\\W_svc.log -svcLog {log_path}"
+                                 "\\S_svc.log -event {event_name} -- "
+                                 "{vm_agent_target_path}\\"
+                                 "{guest_agent}".format(
+                                     service_path=vm_agent_service_path,
+                                     agent_name=SERVICE_NAME_WAGUESTAGENT,
+                                     log_path=vm_agent_log_path,
+                                     event_name=GUEST_AGENT_EVENTNAME,
+                                     vm_agent_target_path=vm_agent_target_path,
+                                     guest_agent=GUEST_AGENT_FILENAME))
+
+        osutils.create_service(
+            SERVICE_NAME_WAGUESTAGENT, SERVICE_NAME_WAGUESTAGENT,
+            vm_agent_service_path, osutils.SERVICE_START_MODE_MANUAL)
 
     @staticmethod
     def _configure_rd_agent(osutils, ga_target_path):
@@ -188,31 +223,44 @@ class AzureGuestAgentPlugin(base.BasePlugin):
                     ga_zip_path)
 
             if not osutils.is_nano_server():
-                # NOTE(scaraiman): logman.exe is not available on Nano server
                 self._stop_ga_event_traces(osutils)
                 self._delete_ga_event_traces(osutils)
 
-            ga_target_path = os.path.join(
-                os.getenv("SystemDrive"), '\\', GUEST_AGENT_ROOT_PATH,
-                "Packages")
+                ga_target_path = os.path.join(
+                    os.getenv("SystemDrive"), '\\', GUEST_AGENT_ROOT_PATH,
+                    "Packages")
 
-            if os.path.exists(ga_target_path):
-                shutil.rmtree(ga_target_path)
-            os.makedirs(ga_target_path)
+                if os.path.exists(ga_target_path):
+                    shutil.rmtree(ga_target_path)
+                os.makedirs(ga_target_path)
 
-            with zipfile.ZipFile(ga_zip_path) as zf:
-                zf.extractall(ga_target_path)
+                with zipfile.ZipFile(ga_zip_path) as zf:
+                    zf.extractall(ga_target_path)
 
-            self._configure_rd_agent(osutils, ga_target_path)
+                self._configure_rd_agent(osutils, ga_target_path)
 
-            if not osutils.check_dotnet_is_installed("4"):
+            else:
+                vm_agent_target_path = os.path.join(
+                    os.getenv("SystemDrive"), '\\', GUEST_AGENT_ROOT_PATH,
+                    "Packages", "GuestAgent")
+                if not os.path.exists(vm_agent_target_path):
+                    os.makedirs(vm_agent_target_path)
+                self._configure_vm_agent(osutils, vm_agent_target_path)
+
+            if (not osutils.check_dotnet_is_installed("4") and
+                    not osutils.is_nano_server()):
                 LOG.warn("The .Net framework 4.5 or greater is required by "
                          "the Azure guest agent")
-            else:
+            elif not osutils.is_nano_server():
                 osutils.set_service_start_mode(
                     SERVICE_NAME_RDAGENT,
                     osutils.SERVICE_START_MODE_AUTOMATIC)
                 osutils.start_service(SERVICE_NAME_RDAGENT)
+            else:
+                osutils.set_service_start_mode(
+                    SERVICE_NAME_WAGUESTAGENT,
+                    osutils.SERVICE_START_MODE_AUTOMATIC)
+                osutils.start_service(SERVICE_NAME_WAGUESTAGENT)
 
         return base.PLUGIN_EXECUTION_DONE, False
 
