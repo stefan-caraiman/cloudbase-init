@@ -154,6 +154,9 @@ class BaseMetadataService(object):
     def post_password(self, enc_password_b64):
         pass
 
+    def get_vm_agent_package_provisioning_data(self):
+        pass
+
     def get_client_auth_certs(self):
         pass
 

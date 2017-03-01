@@ -156,6 +156,9 @@ class BaseOSUtils(object):
         """Enables or disables TRIM delete notifications."""
         raise NotImplementedError()
 
+    def get_file_version(self, path):
+        raise NotImplementedError()
+
     def set_path_admin_acls(self, path):
         raise NotImplementedError()
 
